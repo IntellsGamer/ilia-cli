@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  ilia-telemetry:
+    build: .
+    container_name: ilia-telemetry-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./telemetry_logs:/app/telemetry_logs
+      - ./logs:/app/logs
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
