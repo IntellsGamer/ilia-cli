@@ -17,6 +17,7 @@ import time
 import hashlib
 import zipfile
 import tarfile
+import textwrap
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -170,6 +171,7 @@ class ILIACLI:
     def __init__(self):
         self.app_name = "ilia-cli"
         self.version = "2.0.0"
+        self._configure_console()
         self.config_dir = self.get_config_dir()
         self.config_file = self.config_dir / "config.ini"
         self.templates_dir = self.config_dir / "templates"
@@ -179,6 +181,157 @@ class ILIACLI:
         self.ensure_directories()
         self.config = self.load_config()
         self.session_id = self.generate_session_id()
+
+    def _configure_console(self):
+        """Make terminal output consistent across platforms."""
+        if os.name == "nt":
+            # Enable ANSI escape sequences on modern Windows terminals.
+            os.system("")
+
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+    def _terminal_width(self, minimum: int = 60, maximum: int = 120) -> int:
+        width = shutil.get_terminal_size((80, 24)).columns
+        return max(minimum, min(width, maximum))
+
+    def _supports_ansi(self) -> bool:
+        return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+    def _style(self, text: str, color: str = "", bold: bool = False, dim: bool = False) -> str:
+        if not self._supports_ansi():
+            return text
+
+        codes = []
+        if bold:
+            codes.append("1")
+        if dim:
+            codes.append("2")
+        if color:
+            codes.append(color)
+
+        if not codes:
+            return text
+        return f"\033[{';'.join(codes)}m{text}\033[0m"
+
+    def _divider(self, char: str = "─") -> str:
+        width = self._terminal_width()
+        if not self._supports_ansi() and char == "─":
+            char = "-"
+        return char * width
+
+    def _print_title(self, title: str, subtitle: str = ""):
+        print()
+        print(self._style(title, color="36", bold=True))
+        if subtitle:
+            print(self._style(subtitle, color="37", dim=True))
+        print(self._style(self._divider(), color="90"))
+
+    def _print_section(self, title: str):
+        print()
+        print(self._style(title, color="33", bold=True))
+
+    def _render_pairs(self, pairs: List[Tuple[str, str]]):
+        width = self._terminal_width()
+        key_width = min(24, max(14, int(width * 0.28)))
+        value_width = max(20, width - key_width - 4)
+
+        for key, value in pairs:
+            wrapped = textwrap.wrap(str(value), width=value_width) or [""]
+            print(f"  {self._style((key + ':').ljust(key_width), color='90')}{wrapped[0]}")
+            for line in wrapped[1:]:
+                print(" " * (key_width + 2) + line)
+
+    def _badge(self, ok: bool, good: str = "Enabled", bad: str = "Disabled") -> str:
+        if ok:
+            return self._style(good, color="32", bold=True)
+        return self._style(bad, color="31", bold=True)
+
+    def _supports_unicode(self) -> bool:
+        encoding = (getattr(sys.stdout, "encoding", None) or "utf-8").lower()
+        return "utf" in encoding or "unicode" in encoding
+
+    def _truncate(self, text: str, width: int) -> str:
+        text = str(text)
+        if width <= 1:
+            return text[:width]
+        if len(text) <= width:
+            return text
+        return text[: max(1, width - 1)] + "…"
+
+    def _panel(self, title: str, lines: List[str], tone: str = "info"):
+        width = self._terminal_width()
+        content_width = max(20, width - 4)
+
+        if self._supports_unicode():
+            h, tl, tr, bl, br, v = "─", "┌", "┐", "└", "┘", "│"
+        else:
+            h, tl, tr, bl, br, v = "-", "+", "+", "+", "+", "|"
+
+        tone_color = {"info": "36", "ok": "32", "warn": "33", "error": "31"}.get(tone, "36")
+        title_text = f" {title} "
+        rule = (title_text + (h * max(0, content_width - len(title_text))))[:content_width]
+
+        print(self._style(f"{tl}{rule}{tr}", color=tone_color))
+        for line in lines:
+            wrapped = textwrap.wrap(str(line), width=content_width) or [""]
+            for item in wrapped:
+                print(self._style(v, color=tone_color) + item.ljust(content_width) + self._style(v, color=tone_color))
+        print(self._style(f"{bl}{h * content_width}{br}", color=tone_color))
+
+    def _render_table(self, headers: List[str], rows: List[List[str]]):
+        if not rows:
+            return
+
+        width = self._terminal_width()
+        cols = len(headers)
+        base = max(10, (width - (3 * cols) - 1) // cols)
+        col_widths = [base for _ in headers]
+
+        for i, header in enumerate(headers):
+            col_widths[i] = max(col_widths[i], min(28, len(str(header)) + 2))
+
+        total = sum(col_widths) + (3 * cols) + 1
+        while total > width and any(w > 10 for w in col_widths):
+            idx = max(range(cols), key=lambda k: col_widths[k])
+            if col_widths[idx] > 10:
+                col_widths[idx] -= 1
+                total -= 1
+
+        def render_row(cells: List[str], header: bool = False):
+            parts = []
+            for i, cell in enumerate(cells):
+                cell_text = self._truncate(str(cell), col_widths[i]).ljust(col_widths[i])
+                color = "36" if header else "37"
+                style = self._style(cell_text, color=color, bold=header)
+                parts.append(style)
+            print(" " + " | ".join(parts))
+
+        sep = "-" * max(20, min(width, sum(col_widths) + (3 * cols) - 1))
+        print(self._style(sep, color="90"))
+        render_row(headers, header=True)
+        print(self._style(sep, color="90"))
+        for row in rows:
+            render_row(row)
+        print(self._style(sep, color="90"))
+
+    def _render_step(self, step: int, total: int, label: str):
+        width = max(10, min(24, self._terminal_width() // 4))
+        filled = int((step / max(1, total)) * width)
+        bar = ("#" * filled) + ("-" * (width - filled))
+        print()
+        print(self._style(f"[{bar}] Step {step}/{total}", color="35", bold=True))
+        print(self._style(label, color="37"))
+
+    def _ask_yes_no(self, prompt: str, default: bool = False) -> bool:
+        suffix = "Y/n" if default else "y/N"
+        answer = input(f"{prompt} ({suffix}): ").strip().lower()
+        if not answer:
+            return default
+        return answer in ("y", "yes")
         
     def get_template_manifest(self, template_name: str) -> Optional[TemplateManifest]:
         """Get template manifest"""
@@ -234,8 +387,7 @@ class ILIACLI:
 
     def list_templates_with_details(self):
         """List all templates with manifest details"""
-        print("\n📁 Available Templates")
-        print("=" * 60)
+        self._print_title("Available Templates")
         
         templates = []
         for item in self.templates_dir.iterdir():
@@ -244,16 +396,37 @@ class ILIACLI:
                 templates.append(manifest.data)
         
         if not templates:
-            print("❌ No templates found!")
+            self._panel(
+                "No Templates Found",
+                [
+                    f"Template directory: {self.templates_dir}",
+                    "Create one with: ilia templates create <name>",
+                    "Or import one with: ilia templates import <url-or-file>",
+                ],
+                tone="warn",
+            )
             return
-        
-        for template in templates:
-            print(f"\n📦 {template['name']} v{template['version']}")
-            print(f"   Type: {template['type']}")
-            print(f"   Framework: {template['framework']}")
-            print(f"   Description: {template['description']}")
-            print(f"   Files: {len(list((self.templates_dir / template['name']).rglob('*')))}")
-            print(f"   Use: ilia help template {template['name']}")
+
+        rows = []
+        for template in sorted(templates, key=lambda t: t["name"].lower()):
+            file_count = len(list((self.templates_dir / template['name']).rglob('*')))
+            rows.append([
+                template["name"],
+                template["version"],
+                template["framework"],
+                template["type"],
+                str(file_count),
+            ])
+
+        self._render_table(
+            ["Template", "Version", "Framework", "Type", "Files"],
+            rows
+        )
+
+        self._print_section("Quick Actions")
+        print("  ilia templates info <name>")
+        print("  ilia templates validate <name>")
+        print("  ilia help template <name>")
 
     def create_template_from_current(self, template_name: str, is_framework: bool = False):
         """Create a template from current directory with manifest"""
@@ -633,114 +806,85 @@ class ILIACLI:
     
     def first_run_setup(self):
         """First-time setup wizard"""
-        print("\n" + "="*60)
-        print(f"🚀 Welcome to {self.app_name} v{self.version}")
-        print("="*60)
-        
-        print("\n📋 Let's configure your environment...")
-        
-        # Check for template files in current directory
-        # local_templates = Path.cwd() / "templates"
-        # if local_templates.exists():
-        #     print("\n📦 Found local template files. Would you like to install them?")
-        #     choice = input("Install local templates? (y/N): ").strip().lower()
-        #     if choice in ['y', 'yes', '']:
-        #         self.install_templates(local_templates)
-        # else:
-        #     print("\n📭 No local templates found.")
-        #     print(f"Add templates to {self.templates_dir} or run from a directory with templates.")
-        
-        # Ask about national mirror
-        print("\n🌐 National PyPI Mirror Configuration")
-        print("-" * 40)
-        print("You can configure ilia to use a national PyPI mirror")
-        print("for faster package downloads within Iran.")
-        print("\nMirror URL: https://mirror-pypi.runflare.com/simple")
-        
-        enable_mirror = input("\nEnable national PyPI mirror? (y/N): ").strip().lower()
-        if enable_mirror in ['y', 'yes', '']:
+        self._print_title(f"Welcome to {self.app_name} v{self.version}", "First-time setup wizard")
+        self._panel(
+            "Setup Overview",
+            [
+                "This guided setup configures mirrors, telemetry, updates, editor, and project defaults.",
+                "Press Enter to accept default choices shown in each prompt.",
+            ],
+            tone="info",
+        )
+
+        total_steps = 5
+
+        self._render_step(1, total_steps, "Configure national PyPI mirror")
+        print("Mirror URL: https://mirror-pypi.runflare.com/simple")
+        enable_mirror = self._ask_yes_no("Enable national PyPI mirror", default=False)
+        if enable_mirror:
             self.config['MIRROR']['enabled'] = 'true'
-            print("✅ National mirror enabled")
-            
-            # Test mirror connectivity
+            print(self._style("Mirror enabled", color="32"))
             if self.check_internet():
-                print("🔍 Testing mirror connectivity...")
+                print("Testing mirror connectivity...")
                 if self.test_mirror():
-                    print("✅ Mirror is accessible")
+                    print(self._style("Mirror is accessible", color="32"))
                 else:
-                    print("⚠️  Mirror might be unavailable")
+                    print(self._style("Mirror may be temporarily unavailable", color="33"))
         else:
             self.config['MIRROR']['enabled'] = 'false'
-            print("❌ National mirror disabled")
-        
-        # Ask about telemetry
-        print("\n📊 Usage Statistics")
-        print("-" * 40)
-        print("Help improve ilia by sending anonymous usage statistics.")
-        print("No personal data is collected.")
-        
-        enable_telemetry = input("\nEnable anonymous usage statistics? (y/N): ").strip().lower()
-        if enable_telemetry == 'y':
-            self.config['DEFAULT']['telemetry'] = 'true'
-            print("✅ Telemetry enabled")
-        else:
-            self.config['DEFAULT']['telemetry'] = 'false'
-            print("❌ Telemetry disabled")
-        
-        # Ask about auto-update
-        print("\n🔄 Auto-Update")
-        print("-" * 40)
-        print("Automatically check for ilia updates on startup.")
-        
-        auto_update = input("\nEnable auto-update? (y/N): ").strip().lower()
-        if auto_update in ['y', 'yes', '']:
-            self.config['DEFAULT']['auto_update'] = 'true'
-            print("✅ Auto-update enabled")
-        else:
-            self.config['DEFAULT']['auto_update'] = 'false'
-            print("❌ Auto-update disabled")
-        
-        # Set default editor
-        print("\n📝 Default Code Editor")
-        print("-" * 40)
-        print(f"Detected editor: {self.config['DEFAULT']['editor']}")
-        
-        change_editor = input("\nChange default editor? (y/N): ").strip().lower()
-        if change_editor == 'y':
+            print(self._style("Mirror disabled", color="31"))
+
+        self._render_step(2, total_steps, "Telemetry and update behavior")
+        telemetry_enabled = self._ask_yes_no("Enable anonymous usage statistics", default=False)
+        self.config['DEFAULT']['telemetry'] = 'true' if telemetry_enabled else 'false'
+        print(self._style(
+            "Telemetry enabled" if telemetry_enabled else "Telemetry disabled",
+            color="32" if telemetry_enabled else "31",
+        ))
+
+        auto_update_enabled = self._ask_yes_no("Enable automatic update checks", default=True)
+        self.config['DEFAULT']['auto_update'] = 'true' if auto_update_enabled else 'false'
+        print(self._style(
+            "Auto-update enabled" if auto_update_enabled else "Auto-update disabled",
+            color="32" if auto_update_enabled else "31",
+        ))
+
+        self._render_step(3, total_steps, "Choose default code editor")
+        print(f"Detected default editor: {self.config['DEFAULT']['editor']}")
+        if self._ask_yes_no("Change default editor", default=False):
             available_editors = self.detect_available_editors()
             if available_editors:
-                print("\nAvailable editors:")
-                for i, (cmd, name) in enumerate(available_editors, 1):
-                    print(f"  {i}) {name} ({cmd})")
-                
+                rows = [[str(i), name, cmd] for i, (cmd, name) in enumerate(available_editors, 1)]
+                self._render_table(["#", "Editor", "Command"], rows)
                 try:
-                    choice = int(input(f"\nSelect editor (1-{len(available_editors)}): ").strip())
+                    choice = int(input(f"Select editor (1-{len(available_editors)}): ").strip())
                     if 1 <= choice <= len(available_editors):
-                        self.config['DEFAULT']['editor'] = available_editors[choice-1][0]
-                        print(f"✅ Default editor set to: {available_editors[choice-1][1]}")
+                        self.config['DEFAULT']['editor'] = available_editors[choice - 1][0]
+                        print(self._style(
+                            f"Default editor set to: {available_editors[choice - 1][1]}",
+                            color="32",
+                        ))
                 except (ValueError, IndexError):
-                    print("⚠️  Invalid selection, keeping current editor")
+                    print(self._style("Invalid selection, keeping current editor", color="33"))
             else:
-                print("⚠️  No additional editors detected")
-        
-        # Default project settings
-        print("\n⚙️  Default Project Settings")
-        print("-" * 40)
-        
-        default_template = input("Default template [html/flask]: ").strip().lower()
+                print(self._style("No additional editors detected", color="33"))
+
+        self._render_step(4, total_steps, "Set project defaults")
+        default_template = input("Default template [html/flask] (html): ").strip().lower()
         if default_template in ['html', 'flask']:
             self.config['DEFAULT']['default_template'] = default_template
-            print(f"✅ Default template: {default_template}")
         else:
-            print("⚠️  Invalid template, using 'html' as default")
-        
-        auto_git = input("Initialize git repository for new projects? (y/N): ").strip().lower()
-        self.config['PROJECT']['auto_git'] = 'true' if auto_git == 'y' else 'false'
-        
-        auto_venv = input("Create virtual environment for Python projects? (y/N): ").strip().lower()
-        self.config['PROJECT']['auto_venv'] = 'false' if auto_venv == 'n' else 'true'
-        
-        # Finalize setup
+            self.config['DEFAULT']['default_template'] = 'html'
+            if default_template:
+                print(self._style("Invalid template, fallback to 'html'", color="33"))
+
+        auto_git = self._ask_yes_no("Initialize git repository for new projects", default=False)
+        self.config['PROJECT']['auto_git'] = 'true' if auto_git else 'false'
+
+        auto_venv = self._ask_yes_no("Create virtual environment for Python projects", default=True)
+        self.config['PROJECT']['auto_venv'] = 'true' if auto_venv else 'false'
+
+        self._render_step(5, total_steps, "Finalize setup")
         self.config['DEFAULT']['first_run'] = 'false'
         self.save_config()
         
@@ -748,25 +892,31 @@ class ILIACLI:
                    mirror_enabled=self.config['MIRROR'].getboolean('enabled'),
                    telemetry_enabled=self.config['DEFAULT'].getboolean('telemetry'),
                    auto_update_enabled=self.config['DEFAULT'].getboolean('auto_update'))
-        
-        print("\n" + "="*60)
-        print("✅ Setup Complete!")
-        print("="*60)
-        
+
         # Check if templates exist
         self.check_templates_exist(verbose=False)
-        
-        print("\n🎉 Your ilia CLI is ready to use!")
-        print("\nQuick Start:")
-        print("  ilia new myproject          # Create a new project")
-        print("  ilia new api --flask        # Create Flask API")
-        print("  ilia templates              # List available templates")
-        print("  ilia config                 # Show configuration")
-        print("  ilia doctor                 # Run system diagnostics")
-        
-        print("\n💡 Tip: Run 'ilia --help' for all available commands.")
-        
-        input("\nPress Enter to continue...")
+
+        self._panel(
+            "Setup Complete",
+            [
+                "Your ilia CLI is now ready.",
+                f"Mirror: {'ON' if self.config['MIRROR'].getboolean('enabled') else 'OFF'}",
+                f"Telemetry: {'ON' if self.config['DEFAULT'].getboolean('telemetry') else 'OFF'}",
+                f"Auto-update: {'ON' if self.config['DEFAULT'].getboolean('auto_update') else 'OFF'}",
+            ],
+            tone="ok",
+        )
+
+        self._print_section("Quick Start")
+        print("  ilia new myproject")
+        print("  ilia new api --flask")
+        print("  ilia templates")
+        print("  ilia config")
+        print("  ilia doctor")
+        print()
+        print(self._style("Tip: run 'ilia --help' for all commands.", color="90"))
+
+        input("Press Enter to continue...")
         self.log_activity('info', 'First run setup completed')
     
     def detect_available_editors(self) -> List[Tuple[str, str]]:
@@ -845,196 +995,229 @@ class ILIACLI:
     
     def check_templates_exist(self, verbose: bool = True) -> bool:
         """Check if templates exist and report status"""
-        templates_exist = False
-        
         html_exists = (self.templates_dir / "html").exists()
         flask_exists = (self.templates_dir / "flask").exists()
+        templates_exist = html_exists or flask_exists
         
         if verbose:
-            print("\n📁 Template Status:")
-            print("-" * 40)
-            
+            self._print_title("Template Status")
+            rows = []
             if html_exists:
                 html_files = len(list((self.templates_dir / "html").rglob("*")))
-                print(f"✅ HTML template: {html_files} files")
-                templates_exist = True
+                rows.append(["html", "Available", f"{html_files} files"])
             else:
-                print("❌ HTML template: Not found")
-            
+                rows.append(["html", "Missing", "-"])
+
             if flask_exists:
                 flask_files = len(list((self.templates_dir / "flask").rglob("*")))
-                print(f"✅ Flask template: {flask_files} files")
-                templates_exist = True
+                rows.append(["flask", "Available", f"{flask_files} files"])
             else:
-                print("❌ Flask template: Not found")
-            
+                rows.append(["flask", "Missing", "-"])
+
+            self._render_table(["Template", "Status", "Details"], rows)
+
             if not templates_exist:
-                print(f"\n⚠️  No templates found in {self.templates_dir}")
-                print("To add templates:")
-                print("  1. Create a 'templates' folder in your current directory")
-                print("  2. Add 'html' and/or 'flask' subfolders with your template files")
-                print("  3. Run 'ilia --setup' or restart ilia")
-                print("\nOr download templates from: https://github.com/yourusername/ilia-templates")
+                self._panel(
+                    "How To Add Templates",
+                    [
+                        f"Templates directory: {self.templates_dir}",
+                        "1. Add 'html' and/or 'flask' subfolders with files.",
+                        "2. Run 'ilia --setup' or restart ilia.",
+                        "3. Or use: ilia templates import <url-or-file>",
+                    ],
+                    tone="warn",
+                )
         
-        return html_exists or flask_exists
+        return templates_exist
     
     def show_help(self):
         """Display comprehensive help information"""
-        help_text = f"""
-{self.app_name} v{self.version} - Advanced Project Deployer
+        self._print_title(
+            f"{self.app_name} v{self.version}",
+            "Advanced project deployer and template manager"
+        )
 
-USAGE:
-  ilia <command> [options]
+        self._print_section("Usage")
+        print("  ilia <command> [options]")
 
-CORE COMMANDS:
-  new <name> [--flask|--html]    Create new project
-  init [--flask|--html]          Interactive project creation
-  doctor                         Run system diagnostics
-  update                         Check for updates
+        sections = [
+            ("Core", [
+                ("new <name> [--flask|--html]", "Create a new project"),
+                ("init [--flask|--html]", "Start interactive project creation"),
+                ("doctor", "Run system diagnostics"),
+                ("update", "Check for updates"),
+            ]),
+            ("Projects", [
+                ("projects", "List created projects"),
+                ("open <name>", "Open project in default editor"),
+                ("info <name>", "Show project details"),
+                ("archive <name>", "Archive project"),
+                ("delete <name>", "Delete project with confirmation"),
+            ]),
+            ("Templates", [
+                ("templates", "List available templates"),
+                ("templates list", "List templates with details"),
+                ("templates create <name>", "Create template from current directory"),
+                ("templates info <name>", "Show manifest details"),
+                ("templates validate <name>", "Validate template structure"),
+                ("templates edit <name>", "Edit template manifest"),
+                ("templates import <source>", "Import from URL or local archive"),
+                ("templates remove <name>", "Remove template"),
+                ("templates export <name>", "Export template archive"),
+                ("help templates", "Show template creation guide"),
+            ]),
+            ("Config", [
+                ("config", "Show current configuration"),
+                ("config mirror [enable|disable]", "Configure PyPI mirror"),
+                ("config editor <name>", "Set default editor"),
+                ("config reset", "Reset configuration to defaults"),
+                ("config path", "Show all configuration paths"),
+            ]),
+            ("System", [
+                ("status", "Show runtime and system status"),
+                ("logs [--tail]", "Show logs or live tail"),
+                ("cleanup", "Clean old logs and empty folders"),
+                ("uninstall", "Uninstall ilia CLI"),
+                ("version / about / help", "Show information screens"),
+            ]),
+        ]
 
-PROJECT MANAGEMENT:
-  projects                       List all created projects
-  open <name>                    Open project in editor
-  info <name>                    Show project information
-  archive <name>                 Archive project
-  delete <name>                  Delete project (with confirmation)
+        width = self._terminal_width()
+        cmd_width = max(30, min(42, int(width * 0.46)))
+        desc_width = max(20, width - cmd_width - 6)
 
-TEMPLATE MANAGEMENT:
-  templates                      List available templates
-  templates list                List templates with manifest details
-  templates create <name>       Create template from current directory
-  templates info <name>         Show template manifest details
-  templates validate <name>     Validate template structure
-  templates edit <name>         Edit template manifest
-  templates import <source>     Import template from URL or local file
-  templates remove <name>       Remove template
-  templates export <name>       Export template as archive
-  help templates               Show template creation guide
+        for title, rows in sections:
+            self._print_section(title)
+            for cmd, desc in rows:
+                desc_lines = textwrap.wrap(desc, width=desc_width) or [""]
+                print(f"  {self._style(cmd.ljust(cmd_width), color='36')}{desc_lines[0]}")
+                for line in desc_lines[1:]:
+                    print(" " * (cmd_width + 2) + line)
 
-CONFIGURATION:
-  config                         Show current configuration
-  config mirror [enable|disable] Configure PyPI mirror
-  config editor <name>           Set default code editor
-  config reset                  Reset to default configuration
-  config path                   Show configuration paths
+        self._print_section("Examples")
+        for example in [
+            "ilia new myapp --flask",
+            "ilia new website --html",
+            "ilia config mirror enable",
+            "ilia doctor",
+            "ilia open myapp",
+        ]:
+            print(f"  {self._style(example, color='32')}")
 
-SYSTEM:
-  status                         Show system status
-  logs [--tail]                  View or tail logs
-  cleanup                        Clean up temporary files
-  uninstall                     Uninstall ilia CLI
-
-INFORMATION:
-  version                       Show version information
-  help                          Show this help message
-  about                         About ilia CLI
-
-EXAMPLES:
-  ilia new myapp --flask         # Create Flask application
-  ilia new website --html        # Create HTML website
-  ilia config mirror enable      # Enable national PyPI mirror
-  ilia doctor                    # Run diagnostics
-  ilia projects                  # List all projects
-  ilia open myapp                # Open project in editor
-
-TEMPLATE LOCATION:
-  {self.templates_dir}
-
-CONFIGURATION LOCATION:
-  {self.config_dir}
-        """
-        print(help_text)
+        self._print_section("Paths")
+        self._render_pairs([
+            ("Templates", str(self.templates_dir)),
+            ("Configuration", str(self.config_dir)),
+        ])
     
     def show_about(self):
         """Show about information"""
-        about_text = f"""
-{self.app_name} v{self.version}
-Advanced Project Deployer CLI
+        self._print_title(
+            f"{self.app_name} v{self.version}",
+            "Advanced Project Deployer CLI"
+        )
 
-DESCRIPTION:
-  A powerful CLI tool for quickly scaffolding projects with templates.
-  Supports national PyPI mirrors, project management, and more.
+        self._print_section("Description")
+        description = (
+            "A CLI tool for scaffolding and managing projects with template support, "
+            "mirror-aware package installation, diagnostics, and project lifecycle tools."
+        )
+        for line in textwrap.wrap(description, width=self._terminal_width() - 4):
+            print(f"  {line}")
 
-FEATURES:
-  • Template-based project generation
-  • National PyPI mirror support
-  • Project lifecycle management
-  • System diagnostics
-  • Configurable code editors
-  • Activity logging
-  • Cross-platform compatibility
+        self._print_section("Features")
+        for item in [
+            "Template-based project generation",
+            "National PyPI mirror support",
+            "Project lifecycle management",
+            "System diagnostics and health checks",
+            "Configurable code editors",
+            "Activity logging with session tracking",
+            "Cross-platform support",
+        ]:
+            print(f"  - {item}")
 
-AUTHOR: {self.config['PROJECT']['author']}
-LICENSE: {self.config['PROJECT']['license']}
-REPOSITORY: https://github.com/yourusername/ilia-cli
+        self._print_section("Project Info")
+        self._render_pairs([
+            ("Author", self.config['PROJECT']['author']),
+            ("License", self.config['PROJECT']['license']),
+            ("Repository", "https://github.com/yourusername/ilia-cli"),
+        ])
 
-CONFIGURATION:
-  Config directory: {self.config_dir}
-  Templates directory: {self.templates_dir}
-  Logs directory: {self.logs_dir}
+        self._print_section("Directories")
+        self._render_pairs([
+            ("Config", str(self.config_dir)),
+            ("Templates", str(self.templates_dir)),
+            ("Logs", str(self.logs_dir)),
+        ])
 
-Run 'ilia --help' for usage information.
-        """
-        print(about_text)
+        print()
+        print(self._style("Run 'ilia --help' for usage details.", color="90"))
     
     def show_config(self):
         """Display current configuration"""
-        print("\n📋 Current Configuration")
-        print("=" * 60)
-        
-        # System Information
-        print("\n💻 SYSTEM INFORMATION:")
-        print(f"  Version: {self.version}")
-        print(f"  Python: {platform.python_version()}")
-        print(f"  Platform: {platform.platform()}")
-        print(f"  Session ID: {self.session_id}")
-        
-        # Paths
-        print("\n📁 PATHS:")
-        print(f"  Config: {self.config_dir}")
-        print(f"  Templates: {self.templates_dir}")
-        print(f"  Projects: {self.projects_dir}")
-        print(f"  Logs: {self.logs_dir}")
-        
-        # Features
-        print("\n⚙️  FEATURES:")
+        self._print_title("Current Configuration")
+
+        self._print_section("System")
+        self._render_pairs([
+            ("Version", self.version),
+            ("Python", platform.python_version()),
+            ("Platform", platform.platform()),
+            ("Session ID", self.session_id),
+        ])
+
+        self._print_section("Paths")
+        self._render_pairs([
+            ("Config", str(self.config_dir)),
+            ("Templates", str(self.templates_dir)),
+            ("Projects", str(self.projects_dir)),
+            ("Logs", str(self.logs_dir)),
+        ])
+
         mirror_enabled = self.config['MIRROR'].getboolean('enabled', False)
-        print(f"  PyPI Mirror: {'✅ ENABLED' if mirror_enabled else '❌ DISABLED'}")
-        if mirror_enabled:
-            print(f"    URL: {self.config['MIRROR']['url']}")
-        
         auto_update = self.config['DEFAULT'].getboolean('auto_update', False)
-        print(f"  Auto-Update: {'✅ ENABLED' if auto_update else '❌ DISABLED'}")
-        
         telemetry = self.config['DEFAULT'].getboolean('telemetry', False)
-        print(f"  Telemetry: {'✅ ENABLED' if telemetry else '❌ DISABLED'}")
-        
-        # Project Defaults
-        print("\n🎯 PROJECT DEFAULTS:")
-        print(f"  Default Template: {self.config['DEFAULT']['default_template']}")
-        print(f"  Default Editor: {self.config['DEFAULT']['editor']}")
-        print(f"  Auto Git: {'✅ Yes' if self.config['PROJECT'].getboolean('auto_git') else '❌ No'}")
-        print(f"  Auto VirtualEnv: {'✅ Yes' if self.config['PROJECT'].getboolean('auto_venv') else '❌ No'}")
-        print(f"  Author: {self.config['PROJECT']['author']}")
-        print(f"  License: {self.config['PROJECT']['license']}")
-        
-        # Template Status
-        print("\n📁 TEMPLATE STATUS:")
+
+        self._print_section("Features")
+        self._render_pairs([
+            ("PyPI Mirror", self._badge(mirror_enabled)),
+            ("Auto-Update", self._badge(auto_update)),
+            ("Telemetry", self._badge(telemetry)),
+        ])
+        if mirror_enabled:
+            self._render_pairs([
+                ("Mirror URL", self.config['MIRROR']['url']),
+                ("Trusted Host", self.config['MIRROR']['trusted_host']),
+            ])
+
+        self._print_section("Project Defaults")
+        self._render_pairs([
+            ("Default Template", self.config['DEFAULT']['default_template']),
+            ("Default Editor", self.config['DEFAULT']['editor']),
+            ("Auto Git", self._badge(self.config['PROJECT'].getboolean('auto_git'), "Yes", "No")),
+            ("Auto VirtualEnv", self._badge(self.config['PROJECT'].getboolean('auto_venv'), "Yes", "No")),
+            ("Author", self.config['PROJECT']['author']),
+            ("License", self.config['PROJECT']['license']),
+        ])
+
+        self._print_section("Template Status")
         self.check_templates_exist(verbose=True)
-        
-        # Storage Usage
-        print("\n💾 STORAGE:")
+
+        self._print_section("Storage")
         try:
             config_size = sum(f.stat().st_size for f in self.config_dir.rglob('*') if f.is_file())
-            print(f"  Config: {self.format_size(config_size)}")
-            
+            projects_size = 0
             if self.projects_dir.exists():
                 projects_size = sum(f.stat().st_size for f in self.projects_dir.rglob('*') if f.is_file())
-                print(f"  Projects: {self.format_size(projects_size)}")
-        except:
-            print("  Storage: Unable to calculate")
-        
-        print("\n" + "=" * 60)
+            self._render_pairs([
+                ("Config", self.format_size(config_size)),
+                ("Projects", self.format_size(projects_size)),
+            ])
+        except Exception:
+            print("  Storage usage: unable to calculate")
+
+        print()
+        print(self._style(self._divider(), color="90"))
     
     def format_size(self, size_bytes: int) -> str:
         """Format size in bytes to human readable format"""
@@ -1754,7 +1937,7 @@ Thumbs.db
         print(f"\n📁 Location: {self.templates_dir}")
         
         print("\n📋 Commands:")
-        print("  ilia templates add <name>      - Add template from current directory")
+        print("  ilia templates create <name>   - Add template from current directory")
         print("  ilia templates remove <name>   - Remove template")
         print("  ilia templates import <source> - Import template from URL or local file")
         print("  ilia templates export <name>   - Export template as archive")
@@ -2511,10 +2694,12 @@ Thumbs.db
         projects_file = self.projects_dir / 'projects.json'
         
         if not projects_file.exists():
-            print("\n📁 No projects found")
-            print("\nCreate your first project:")
-            print("  ilia new myproject --html")
-            print("  ilia new myapi --flask")
+            self._print_title("Projects")
+            print("No projects found.")
+            print()
+            print("Create your first project:")
+            print(f"  {self._style('ilia new myproject --html', color='32')}")
+            print(f"  {self._style('ilia new myapi --flask', color='32')}")
             return
         
         try:
@@ -2522,27 +2707,36 @@ Thumbs.db
                 projects = json.load(f)
             
             if not projects:
-                print("\n📁 No projects found")
+                self._print_title("Projects")
+                print("No projects found.")
                 return
             
-            print("\n📁 Your Projects")
-            print("=" * 60)
+            self._print_title(f"Your Projects ({len(projects)})")
+            width = self._terminal_width()
+            name_width = max(14, min(26, int(width * 0.25)))
+            type_width = max(8, min(14, int(width * 0.12)))
             
             for i, project in enumerate(projects, 1):
                 created = datetime.fromisoformat(project['created']).strftime('%Y-%m-%d')
                 size_str = self.format_size(project.get('size', 0))
                 
-                print(f"{i:2}. {project['name']:20} ({project['type']:10})")
-                print(f"     Created: {created} | Size: {size_str:>8}")
-                print(f"     Path: {project['path']}")
+                name = project['name'][:name_width]
+                ptype = project['type'][:type_width]
+                header = f"{i:>2}. {name:<{name_width}} {ptype:<{type_width}}"
+                print(self._style(header, color="36", bold=True))
+                self._render_pairs([
+                    ("Created", created),
+                    ("Size", size_str),
+                    ("Path", project['path']),
+                ])
                 if i < len(projects):
-                    print()
+                    print(self._style(self._divider("."), color="90"))
             
-            print("\n📋 Commands:")
-            print("  ilia open <name>      - Open project in editor")
-            print("  ilia info <name>      - Show project information")
-            print("  ilia archive <name>   - Archive project")
-            print("  ilia delete <name>    - Delete project")
+            self._print_section("Commands")
+            print("  ilia open <name>      Open project in editor")
+            print("  ilia info <name>      Show project information")
+            print("  ilia archive <name>   Archive project")
+            print("  ilia delete <name>    Delete project")
             
         except Exception as e:
             print(f"❌ Error loading projects: {e}")
@@ -2590,74 +2784,80 @@ Thumbs.db
             return
         
         project_path = Path(project_info['path'])
-        
-        print(f"\n📋 Project: {project_info['name']}")
-        print("=" * 60)
-        
-        print(f"Type: {project_info['type']}")
-        print(f"Created: {datetime.fromisoformat(project_info['created']).strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Modified: {datetime.fromisoformat(project_info['modified']).strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Size: {self.format_size(project_info.get('size', 0))}")
-        print(f"Path: {project_path}")
+
+        self._print_title(f"Project: {project_info['name']}")
+        self._render_pairs([
+            ("Type", project_info['type']),
+            ("Created", datetime.fromisoformat(project_info['created']).strftime('%Y-%m-%d %H:%M:%S')),
+            ("Modified", datetime.fromisoformat(project_info['modified']).strftime('%Y-%m-%d %H:%M:%S')),
+            ("Size", self.format_size(project_info.get('size', 0))),
+            ("Path", str(project_path)),
+        ])
         
         # Check if project exists
         if project_path.exists():
-            print(f"\n📁 Project Status: ✅ EXISTS")
+            self._panel("Project Status", ["Exists on disk"], tone="ok")
             
             # Count files
             files = list(project_path.rglob('*'))
             file_count = len([f for f in files if f.is_file()])
             dir_count = len([f for f in files if f.is_dir()])
-            
-            print(f"Files: {file_count}")
-            print(f"Directories: {dir_count}")
+            self._render_pairs([
+                ("Files", str(file_count)),
+                ("Directories", str(dir_count)),
+            ])
             
             # Check for common files
-            print("\n📄 Key Files:")
+            self._print_section("Key Files")
             common_files = ['requirements.txt', 'package.json', 'app.py', 'index.html', 'README.md']
+            key_rows = []
             for file in common_files:
                 file_path = project_path / file
                 if file_path.exists():
-                    print(f"  ✅ {file}")
+                    key_rows.append([file, "Present"])
                 else:
                     # Check in subdirectories
                     found = False
                     for f in project_path.rglob(file):
                         if f.is_file():
-                            print(f"  ✅ {f.relative_to(project_path)}")
+                            key_rows.append([str(f.relative_to(project_path)), "Present"])
                             found = True
                             break
                     if not found:
-                        print(f"  ❌ {file}")
+                        key_rows.append([file, "Missing"])
+
+            self._render_table(["File", "Status"], key_rows)
             
             # Git status
             if (project_path / '.git').exists():
-                print("\n🔧 Git: ✅ Initialized")
+                git_status = "Initialized"
             else:
-                print("\n🔧 Git: ❌ Not initialized")
+                git_status = "Not initialized"
             
             # Virtual environment
             venv_dirs = ['venv', '.venv', 'env']
             venv_found = False
+            venv_label = "Not found"
             for venv_dir in venv_dirs:
                 if (project_path / venv_dir).exists():
-                    print(f"🐍 Virtual Environment: ✅ {venv_dir}")
+                    venv_label = venv_dir
                     venv_found = True
                     break
-            if not venv_found:
-                print("🐍 Virtual Environment: ❌ Not found")
+            self._render_pairs([
+                ("Git", git_status),
+                ("Virtual Environment", venv_label if venv_found else "Not found"),
+            ])
         
         else:
-            print(f"\n📁 Project Status: ❌ MISSING")
+            self._panel("Project Status", ["Project directory is missing"], tone="error")
         
-        print("\n📋 Commands:")
-        print(f"  ilia open {project_name}      - Open in editor")
-        print(f"  cd {project_path}            - Navigate to project")
+        self._print_section("Commands")
+        print(f"  ilia open {project_name}")
+        print(f"  cd {project_path}")
     
     def run_doctor(self):
         """Run system diagnostics"""
-        print("\n🏥 ilia System Doctor")
-        print("=" * 60)
+        self._print_title("ilia System Doctor")
         
         checks = []
         
@@ -2726,46 +2926,53 @@ Thumbs.db
                       "✅" if venv_available else "⚠️"))
         
         # Display checks
-        print("\n🔍 System Checks:")
+        self._print_section("System Checks")
         for check_name, status, icon in checks:
-            print(f"  {icon} {check_name:<25} {status}")
+            clean_icon = icon.replace("✅", "OK").replace("⚠️", "WARN").replace("❌", "FAIL").replace("ℹ️", "INFO")
+            label = f"[{clean_icon}] {check_name}"
+            self._render_pairs([(label, status)])
         
         # Summary
-        print("\n📊 Summary:")
+        self._print_section("Summary")
         
         total = len(checks)
         ok = sum(1 for _, _, icon in checks if icon == "✅")
         warnings = sum(1 for _, _, icon in checks if icon == "⚠️")
         errors = sum(1 for _, _, icon in checks if icon == "❌")
         
-        print(f"  Total Checks: {total}")
-        print(f"  ✅ Passed: {ok}")
-        print(f"  ⚠️  Warnings: {warnings}")
-        print(f"  ❌ Errors: {errors}")
+        self._render_pairs([
+            ("Total Checks", str(total)),
+            ("Passed", str(ok)),
+            ("Warnings", str(warnings)),
+            ("Errors", str(errors)),
+        ])
         
         # Recommendations
-        print("\n💡 Recommendations:")
+        self._print_section("Recommendations")
+        recommendations = []
         
         if template_count == 0:
-            print("  • Add templates: Copy template folders to templates directory")
-            print(f"    Location: {self.templates_dir}")
+            recommendations.append(f"Add templates to: {self.templates_dir}")
         
         if not editor_available:
-            print(f"  • Install {editor} or change default editor:")
-            print("    ilia config editor <editor-name>")
+            recommendations.append(f"Install '{editor}' or run: ilia config editor <editor-name>")
         
         if not git_available and self.config['PROJECT'].getboolean('auto_git'):
-            print("  • Install Git or disable auto-git:")
-            print("    ilia config set PROJECT.auto_git false")
+            recommendations.append("Install Git or disable auto-git: ilia config set PROJECT.auto_git false")
         
         if not venv_available and self.config['PROJECT'].getboolean('auto_venv'):
-            print("  • Install venv module or disable auto-venv:")
-            print("    ilia config set PROJECT.auto_venv false")
+            recommendations.append("Install venv module or disable auto-venv: ilia config set PROJECT.auto_venv false")
+
+        if recommendations:
+            for rec in recommendations:
+                print(f"  - {rec}")
+        else:
+            print(f"  {self._style('No action required. Environment looks good.', color='32')}")
         
-        print("\n🛠️  Commands:")
-        print("  ilia config        - View configuration")
-        print("  ilia templates     - List templates")
-        print("  ilia --setup       - Run setup wizard")
+        self._print_section("Quick Commands")
+        print("  ilia config      View configuration")
+        print("  ilia templates   List templates")
+        print("  ilia --setup     Run setup wizard")
         
         self.log_activity('info', 'System diagnostics completed')
         self.send_telemetry("doctor_ran", 
@@ -2775,38 +2982,42 @@ Thumbs.db
     
     def show_status(self):
         """Show system status"""
-        print("\n📊 ilia System Status")
-        print("=" * 60)
+        self._print_title("ilia System Status")
         
         # Basic info
-        print(f"Version: {self.version}")
-        print(f"Session: {self.session_id}")
-        print(f"Python: {platform.python_version()}")
-        print(f"Platform: {platform.platform()}")
+        self._print_section("Runtime")
+        self._render_pairs([
+            ("Version", self.version),
+            ("Session", self.session_id),
+            ("Python", platform.python_version()),
+            ("Platform", platform.platform()),
+        ])
         
         # Configuration
-        print("\n⚙️  Configuration:")
-        print(f"  Config: {self.config_dir}")
-        print(f"  Templates: {self.templates_dir}")
-        print(f"  Projects: {self.projects_dir}")
+        self._print_section("Configuration")
+        self._render_pairs([
+            ("Config", str(self.config_dir)),
+            ("Templates", str(self.templates_dir)),
+            ("Projects", str(self.projects_dir)),
+        ])
         
         # Features
-        print("\n🎯 Features:")
+        self._print_section("Features")
         mirror = "✅ Enabled" if self.config['MIRROR'].getboolean('enabled') else "❌ Disabled"
-        print(f"  PyPI Mirror: {mirror}")
-        
         auto_update = "✅ Yes" if self.config['DEFAULT'].getboolean('auto_update') else "❌ No"
-        print(f"  Auto-Update: {auto_update}")
-        
         telemetry = "✅ Yes" if self.config['DEFAULT'].getboolean('telemetry') else "❌ No"
-        print(f"  Telemetry: {telemetry}")
+        self._render_pairs([
+            ("PyPI Mirror", mirror),
+            ("Auto-Update", auto_update),
+            ("Telemetry", telemetry),
+        ])
         
         # Statistics
-        print("\n📈 Statistics:")
+        self._print_section("Statistics")
         
         # Template count
         templates = self.list_available_templates()
-        print(f"  Templates: {len(templates)}")
+        template_total = len(templates)
         
         # Project count
         projects_file = self.projects_dir / 'projects.json'
@@ -2818,7 +3029,7 @@ Thumbs.db
                     project_count = len(projects)
             except:
                 pass
-        print(f"  Projects: {project_count}")
+        projects_total = project_count
         
         # Log size
         log_size = 0
@@ -2828,34 +3039,45 @@ Thumbs.db
                     log_size += log_file.stat().st_size
                 except:
                     pass
-        print(f"  Logs: {self.format_size(log_size)}")
+        self._render_pairs([
+            ("Templates", str(template_total)),
+            ("Projects", str(projects_total)),
+            ("Logs", self.format_size(log_size)),
+        ])
         
         # System health
-        print("\n🏥 System Health:")
+        self._print_section("System Health")
         internet = "✅ Connected" if self.check_internet() else "❌ Disconnected"
-        print(f"  Internet: {internet}")
-        
         git = "✅ Available" if shutil.which('git') else "❌ Not found"
-        print(f"  Git: {git}")
-        
         editor = self.config['DEFAULT']['editor']
         editor_status = "✅ Available" if shutil.which(editor) else "❌ Not found"
-        print(f"  Editor ({editor}): {editor_status}")
-        
-        print("\n💡 Run 'ilia doctor' for detailed diagnostics")
+        self._render_pairs([
+            ("Internet", internet),
+            ("Git", git),
+            (f"Editor ({editor})", editor_status),
+        ])
+
+        print()
+        print(self._style("Run 'ilia doctor' for detailed diagnostics.", color="90"))
     
     def check_for_updates(self):
         """Check for ilia updates"""
-        print("\n🔄 Checking for updates...")
+        self._print_title("Update Check")
         
         if not self.check_internet():
-            print("❌ No internet connection")
+            self._panel("Update Result", ["No internet connection"], tone="error")
             return
         
         try:
             # This would check a real API in production
-            print("✅ You have the latest version")
-            print(f"Current: {self.version}")
+            self._panel(
+                "Update Result",
+                [
+                    "You have the latest version installed.",
+                    f"Current version: {self.version}",
+                ],
+                tone="ok",
+            )
             
             # Update last check timestamp
             self.config['DEFAULT']['last_update_check'] = str(int(time.time()))
@@ -2870,39 +3092,40 @@ Thumbs.db
         log_files = list(self.logs_dir.glob('*.log'))
         
         if not log_files:
-            print("📭 No log files found")
+            self._panel("Logs", ["No log files found"], tone="warn")
             return
         
         # Sort by modification time (newest first)
         log_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
         
-        print(f"\n📋 Log Files ({len(log_files)} found):")
-        for i, log_file in enumerate(log_files[:5], 1):
+        self._print_title(f"Logs ({len(log_files)} files)")
+        rows = []
+        for i, log_file in enumerate(log_files[:8], 1):
             size = self.format_size(log_file.stat().st_size)
             modified = datetime.fromtimestamp(log_file.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
-            print(f"{i}. {log_file.name} ({size}, {modified})")
+            rows.append([str(i), log_file.name, size, modified])
+        self._render_table(["#", "File", "Size", "Modified"], rows)
         
-        if len(log_files) > 5:
-            print(f"... and {len(log_files) - 5} more")
+        if len(log_files) > 8:
+            print(self._style(f"... and {len(log_files) - 8} more", color="90"))
         
         # Show latest log
         latest_log = log_files[0]
-        print(f"\n📄 Latest log: {latest_log.name}")
-        print("-" * 60)
+        self._print_section(f"Latest: {latest_log.name}")
         
         try:
             with open(latest_log, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            if tail:
-                # Show last 20 lines
-                lines = lines[-20:]
+            # Show last lines by default to keep output compact like a log viewer.
+            lines = lines[-20:]
             
             for line in lines:
                 print(line.rstrip())
             
             if tail:
-                print("\n📝 Tailing log (Ctrl+C to stop)...")
+                print()
+                print(self._style("Tailing log (Ctrl+C to stop)...", color="36"))
                 # Simple tail implementation
                 try:
                     with open(latest_log, 'r', encoding='utf-8') as f:
@@ -3096,27 +3319,7 @@ Thumbs.db
         
         elif args[0] in ['--about', 'about']:
             self.show_about()
-        
-        elif args[0] == 'new':
-            if len(args) < 2:
-                print("❌ Project name required")
-                print("Usage: ilia new <project-name> [--html|--flask|--type]")
-                return
-            
-            project_name = args[1]
-            project_type = None
-            
-            # Parse template flags
-            for i, arg in enumerate(args):
-                if arg in ['--flask', '-f', '--python']:
-                    project_type = 'flask'
-                elif arg in ['--html', '-h', '--web']:
-                    project_type = 'html'
-                elif arg == '--type' and i + 1 < len(args):
-                    project_type = args[i + 1]
-            
-            self.init_project(project_type, project_name)
-        
+          
         elif args[0] == 'init':
             project_type = None
             project_name = None
