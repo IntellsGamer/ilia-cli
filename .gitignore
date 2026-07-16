@@ -12,5 +12,3 @@ OUTPUT*/*
 OUTPUT*/*.*
 OUTPUT*
 3root.py
-
-__pycache__
