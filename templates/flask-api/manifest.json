@@ -1,0 +1,40 @@
+{
+  "name": "flask-api",
+  "version": "1.0.0",
+  "description": "Flask RESTful CRUD API with CORS, JSON endpoints, and in-memory data store",
+  "type": "framework",
+  "framework": "flask",
+  "variables": [
+    {"name": "project_name", "description": "API name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "API version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "API description", "default": "A Flask REST API", "required": false},
+    {"name": "port", "description": "Server port", "default": "5000", "required": false},
+    {"name": "secret_key", "description": "Flask secret key", "default": "", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "pip install -r requirements.txt"
+    ],
+    "setup": [
+      "echo 'Flask API project {{ project_name }} created!'",
+      "echo 'Run: python app.py'",
+      "echo 'Test: curl http://localhost:{{ port }}/items'"
+    ]
+  },
+  "dependencies": {
+    "python": ["flask", "flask-cors", "python-dotenv"],
+    "node": [],
+    "system": []
+  },
+  "required_files": ["app.py", "requirements.txt"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "venv", ".venv", "env"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "python", "flask", "rest", "crud"],
+    "category": "api-server"
+  }
+}

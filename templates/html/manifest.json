@@ -1,0 +1,36 @@
+{
+  "name": "html",
+  "version": "2.0.0",
+  "description": "Static HTML5 website with Bootstrap, multi-page navigation, and responsive design",
+  "type": "framework",
+  "framework": "html",
+  "variables": [
+    {"name": "project_name", "description": "Website name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Site version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Site description", "default": "A static HTML website", "required": false},
+    {"name": "year", "description": "Copyright year", "default": "", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [],
+    "setup": [
+      "echo 'HTML project {{ project_name }} created!'",
+      "echo 'Open index.html in your browser.'"
+    ]
+  },
+  "dependencies": {
+    "python": [],
+    "node": [],
+    "system": []
+  },
+  "required_files": ["index.html"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "html", "static", "bootstrap"],
+    "category": "static-site"
+  }
+}

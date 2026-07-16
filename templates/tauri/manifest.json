@@ -1,0 +1,26 @@
+{
+  "name": "tauri",
+  "version": "1.0.0",
+  "description": "Tauri v2 desktop application with Rust backend, web frontend, and native system APIs",
+  "type": "framework",
+  "framework": "rust",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Tauri desktop app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Tauri project created!'", "echo 'Run: npm run tauri dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["@tauri-apps/api", "vite"], "system": ["rust >= 1.70", "cargo", "node >= 18"]
+  },
+  "required_files": ["package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "dist", "src-tauri/target"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["desktop", "tauri", "rust", "cross-platform"], "category": "desktop-app"
+  }
+}

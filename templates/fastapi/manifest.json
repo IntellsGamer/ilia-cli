@@ -1,0 +1,40 @@
+{
+  "name": "fastapi",
+  "version": "1.0.0",
+  "description": "FastAPI async Python API server with auto-docs, CORS, and environment config",
+  "type": "framework",
+  "framework": "fastapi",
+  "variables": [
+    {"name": "project_name", "description": "Project name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "API version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "API description", "default": "A FastAPI application", "required": false},
+    {"name": "port", "description": "Server port", "default": "8000", "required": false},
+    {"name": "license", "description": "Project license", "default": "MIT", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "pip install -r requirements.txt"
+    ],
+    "setup": [
+      "echo 'FastAPI project {{ project_name }} created!'",
+      "echo 'Run: python main.py'",
+      "echo 'Docs: http://localhost:{{ port }}/docs'"
+    ]
+  },
+  "dependencies": {
+    "python": ["fastapi", "uvicorn", "pydantic", "python-dotenv"],
+    "node": [],
+    "system": []
+  },
+  "required_files": ["main.py", "requirements.txt"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "venv", ".venv", "env"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "python", "fastapi", "async", "rest"],
+    "category": "api-server"
+  }
+}

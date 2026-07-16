@@ -1,0 +1,27 @@
+{
+  "name": "fiber",
+  "version": "1.0.0",
+  "description": "Fiber Go web framework inspired by Express, with zero-allocation routing and middleware",
+  "type": "framework",
+  "framework": "go",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Fiber app", "required": false},
+    {"name": "port", "description": "Server port", "default": "8080", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["go mod tidy"],
+    "setup": ["echo 'Fiber project created!'", "echo 'Run: go run main.go'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["go >= 1.22"]
+  },
+  "required_files": ["go.mod", "main.go"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "go", "fiber", "express-like", "fast"], "category": "api-server"
+  }
+}

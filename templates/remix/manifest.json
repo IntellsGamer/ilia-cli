@@ -1,0 +1,26 @@
+{
+  "name": "remix",
+  "version": "1.0.0",
+  "description": "Remix React framework with nested routing, SSR, and progressive enhancement",
+  "type": "framework",
+  "framework": "react",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Remix app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Remix project created!'", "echo 'Run: npm run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["@remix-run/react", "@remix-run/node", "react", "react-dom"], "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "remix.config.js", "app/root.tsx"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "build", "public/build"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "react", "remix", "ssr", "routing"], "category": "web-framework"
+  }
+}

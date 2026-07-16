@@ -1,0 +1,38 @@
+{
+  "name": "go-api",
+  "version": "1.0.0",
+  "description": "Go HTTP API server with net/http, JSON responses, health endpoint, and environment config",
+  "type": "framework",
+  "framework": "go",
+  "variables": [
+    {"name": "project_name", "description": "API module name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "API version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "API description", "default": "A Go API server", "required": false},
+    {"name": "port", "description": "Server port", "default": "8080", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "go mod tidy"
+    ],
+    "setup": [
+      "echo 'Go API project {{ project_name }} created!'",
+      "echo 'Run: go run main.go'"
+    ]
+  },
+  "dependencies": {
+    "python": [],
+    "node": [],
+    "system": ["go >= 1.21"]
+  },
+  "required_files": ["go.mod", "main.go"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "go", "golang", "rest", "server"],
+    "category": "api-server"
+  }
+}

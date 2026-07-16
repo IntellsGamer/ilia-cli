@@ -1,0 +1,26 @@
+{
+  "name": "phoenix",
+  "version": "1.0.0",
+  "description": "Phoenix Elixir web framework with LiveView, Ecto ORM, channels, and fault-tolerance",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Phoenix app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["mix deps.get"],
+    "setup": ["echo 'Phoenix project created!'", "echo 'Run: mix phx.server'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["elixir >= 1.15", "erlang >= 26", "mix"]
+  },
+  "required_files": [],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "deps", "_build"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "elixir", "phoenix", "liveview", "realtime"], "category": "web-framework"
+  }
+}

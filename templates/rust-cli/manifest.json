@@ -1,0 +1,36 @@
+{
+  "name": "rust-cli",
+  "version": "1.0.0",
+  "description": "Rust CLI tool with clap argument parsing, Cargo build system, and structured error handling",
+  "type": "framework",
+  "framework": "rust",
+  "variables": [
+    {"name": "project_name", "description": "CLI tool name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Tool version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Tool description", "default": "A Rust CLI tool", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [],
+    "setup": [
+      "echo 'Rust CLI project {{ project_name }} created!'",
+      "echo 'Build: cargo build --release'",
+      "echo 'Run: cargo run -- --help'"
+    ]
+  },
+  "dependencies": {
+    "python": [],
+    "node": [],
+    "system": ["rust >= 1.70", "cargo"]
+  },
+  "required_files": ["Cargo.toml", "src/main.rs"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "target"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["cli", "rust", "clap", "systems"],
+    "category": "cli-tool"
+  }
+}

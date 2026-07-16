@@ -1,0 +1,40 @@
+{
+  "name": "python-lib",
+  "version": "1.0.0",
+  "description": "Python library with src-layout, setuptools packaging, pytest test suite, and dev requirements",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "Library name (snake_case)", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Library version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Library description", "default": "A Python library", "required": false},
+    {"name": "email", "description": "Author email", "default": "", "required": false},
+    {"name": "license", "description": "Project license", "default": "MIT", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "pip install -e .",
+      "pip install -r requirements-dev.txt"
+    ],
+    "setup": [
+      "echo 'Python library {{ project_name }} created!'",
+      "echo 'Test: pip install pytest && pytest'"
+    ]
+  },
+  "dependencies": {
+    "python": [],
+    "node": [],
+    "system": []
+  },
+  "required_files": ["setup.py", "src/{{ project_name }}/__init__.py"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "venv", ".venv", "env", "*.egg-info", "dist", "build"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["python", "library", "package", "pytest"],
+    "category": "library"
+  }
+}

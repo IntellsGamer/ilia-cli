@@ -1,0 +1,26 @@
+{
+  "name": "flutter",
+  "version": "1.0.0",
+  "description": "Flutter cross-platform mobile app with Material Design 3, Dart, and hot-reload",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Flutter app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["flutter pub get"],
+    "setup": ["echo 'Flutter project created!'", "echo 'Run: flutter run'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["flutter >= 3.24", "dart >= 3.5"]
+  },
+  "required_files": ["pubspec.yaml", "lib/main.dart"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", ".dart_tool", "build", ".packages"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["mobile", "flutter", "dart", "cross-platform", "material"], "category": "mobile-app"
+  }
+}

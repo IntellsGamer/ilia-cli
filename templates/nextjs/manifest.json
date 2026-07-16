@@ -1,0 +1,37 @@
+{
+  "name": "nextjs",
+  "version": "1.0.0",
+  "description": "Next.js 14 application with TypeScript, file-based routing, and SSR support",
+  "type": "framework",
+  "framework": "react",
+  "variables": [
+    {"name": "project_name", "description": "Application name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Application version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Application description", "default": "A Next.js application", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "npm install"
+    ],
+    "setup": [
+      "echo 'Next.js project {{ project_name }} created!'",
+      "echo 'Run: npm run dev'"
+    ]
+  },
+  "dependencies": {
+    "python": [],
+    "node": ["next", "react", "react-dom", "typescript"],
+    "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "next.config.js"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", ".next", "out"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "react", "nextjs", "typescript", "ssr"],
+    "category": "web-framework"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "mkdocs",
+  "version": "1.0.0",
+  "description": "MkDocs documentation site with Material theme, multi-page nav, and Markdown content",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "Site name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Site version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Site description", "default": "Documentation site", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["pip install -r requirements.txt"],
+    "setup": ["echo 'MkDocs site created!'", "echo 'Run: mkdocs serve'"]
+  },
+  "dependencies": {
+    "python": ["mkdocs", "mkdocs-material"], "node": [], "system": []
+  },
+  "required_files": ["mkdocs.yml", "docs/index.md"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "venv", ".venv", "site"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["docs", "mkdocs", "markdown", "material"], "category": "documentation"
+  }
+}

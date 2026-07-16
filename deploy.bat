@@ -13,11 +13,11 @@ if %errorlevel% equ 0 (
 )
 
 :: Force copy ilia.bat to user folder
-xcopy /Y "%~dp0\ilia.bat" "%USERPROFILE%\ilia.bat" >nul
+xcopy /Y "%~dp0\apd.bat" "%USERPROFILE%\apd.bat" >nul
 if %errorlevel% equ 0 (
-    echo ilia.bat copied to: %USERPROFILE%
+    echo apd.bat copied to: %USERPROFILE%
 ) else (
-    echo Failed to copy ilia.bat
+    echo Failed to copy apd.bat
 )
 
 echo.

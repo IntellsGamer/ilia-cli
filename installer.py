@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ilia CLI Installer - Python Version
+APD CLI Installer - Python Version
 Converts the original batch installer to Python
 """
 
@@ -15,7 +15,7 @@ def check_initial_files():
     current_dir = Path.cwd()
     
     # Check for both required files
-    required_files = ['ilia.bat', 'schematic_deploy.py']
+    required_files = ['apd.bat', 'schematic_deploy.py']
     missing_files = []
     
     for file in required_files:
@@ -32,7 +32,7 @@ def check_initial_files():
 
 def check_existing_installation():
     """Check if CLI is already installed or needs cleanup"""
-    install_dir = Path(os.getenv('APPDATA')) / 'ilia-cli'
+    install_dir = Path(os.getenv('APPDATA')) / 'APD'
     
     if install_dir.exists():
         config_file = install_dir / 'available.inf'
@@ -64,17 +64,17 @@ def install_cli():
     """Install the CLI files to appropriate locations"""
     current_dir = Path.cwd()
     user_home = Path.home()
-    install_dir = Path(os.getenv('APPDATA')) / 'ilia-cli'
+    install_dir = Path(os.getenv('APPDATA')) / 'APD'
     
     try:
         # Set window title
         os.system('title Schematic Deploy - Installer')
         
-        # Copy ilia.bat to user home
-        ilia_bat_src = current_dir / 'ilia.bat'
-        ilia_bat_dst = user_home / 'ilia.bat'
-        shutil.copy2(ilia_bat_src, ilia_bat_dst)
-        print(f"✅ Copied ilia.bat to: {user_home}")
+        # Copy apd.bat to user home
+        APD_bat_src = current_dir / 'apd.bat'
+        APD_bat_dst = user_home / 'apd.bat'
+        shutil.copy2(APD_bat_src, APD_bat_dst)
+        print(f"✅ Copied apd.bat to: {user_home}")
         
         # Copy schematic_deploy.py to user home
         deploy_src = current_dir / 'schematic_deploy.py'
@@ -113,15 +113,15 @@ def install_cli():
                 f.write("# Configuration file - do not delete\n")
                 f.write(f"install_date={subprocess.getoutput('date /t')}")
         
-        print("\n✅ Successfully installed ilia CLI!")
+        print("\n✅ Successfully installed APD CLI!")
         print("\n📋 Installed files:")
-        print(f"  • {user_home}/ilia.bat")
+        print(f"  • {user_home}/apd.bat")
         print(f"  • {user_home}/schematic_deploy.py")
         print(f"  • {install_dir}/ (configuration)")
         
-        print("\n🚀 Try opening a folder and running: ilia --setup")
+        print("\n🚀 Try opening a folder and running: APD --setup")
         print()
-        print(f'💡 If "ilia" command doesn\'t work, add "{user_home}" to PATH')
+        print(f'💡 If "APD" command doesn\'t work, add "{user_home}" to PATH')
         print('   or run: python schematic_deploy.py --setup')
         print()
         input("Press Enter to exit...")
@@ -141,7 +141,7 @@ def install_cli():
 
 def main():
     """Main installer function"""
-    print("=== ilia CLI Installer ===")
+    print("=== APD CLI Installer ===")
     print()
     
     # Check initial files

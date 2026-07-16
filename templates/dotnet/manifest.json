@@ -1,0 +1,26 @@
+{
+  "name": "dotnet",
+  "version": "1.0.0",
+  "description": ".NET 8 Web API with C#, minimal hosting model, and structured JSON endpoints",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A .NET Web API", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["dotnet restore"],
+    "setup": ["echo '.NET project created!'", "echo 'Run: dotnet run'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["dotnet >= 8.0"]
+  },
+  "required_files": [],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "bin", "obj"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "dotnet", "csharp", "webapi"], "category": "api-server"
+  }
+}

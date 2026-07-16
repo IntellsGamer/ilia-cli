@@ -1,0 +1,26 @@
+{
+  "name": "lit",
+  "version": "1.0.0",
+  "description": "Lit web components starter with Vite, reactive properties, and Shadow DOM encapsulation",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Lit app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Lit project created!'", "echo 'Run: npm run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["lit", "vite"], "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "index.html", "vite.config.js"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "dist"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "lit", "web-components", "vite"], "category": "web-framework"
+  }
+}

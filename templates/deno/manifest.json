@@ -1,0 +1,27 @@
+{
+  "name": "deno",
+  "version": "1.0.0",
+  "description": "Deno web server with Oak framework, TypeScript-native runtime, and task runner",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Deno app", "required": false},
+    {"name": "port", "description": "Server port", "default": "8000", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": [],
+    "setup": ["echo 'Deno project created!'", "echo 'Run: deno task dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["deno >= 1.40"]
+  },
+  "required_files": ["deno.json", "main.ts"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["deno", "typescript", "oak", "server"], "category": "api-server"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "react-native",
+  "version": "1.0.0",
+  "description": "React Native app with Expo, cross-platform mobile development, and TypeScript",
+  "type": "framework",
+  "framework": "react",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A React Native app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'React Native project created!'", "echo 'Run: npx expo start'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["expo", "react-native", "react"], "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "app.json", "App.tsx"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", ".expo"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["mobile", "react-native", "expo", "cross-platform"], "category": "mobile-app"
+  }
+}

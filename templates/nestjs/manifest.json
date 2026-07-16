@@ -1,0 +1,27 @@
+{
+  "name": "nestjs",
+  "version": "1.0.0",
+  "description": "NestJS TypeScript framework with decorators, modules, dependency injection, and CLI tooling",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A NestJS app", "required": false},
+    {"name": "port", "description": "Server port", "default": "3000", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'NestJS project created!'", "echo 'Run: npm run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["@nestjs/core", "@nestjs/common", "typescript", "reflect-metadata"], "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "tsconfig.json", "src/main.ts"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "dist"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "nestjs", "typescript", "framework", "decorators"], "category": "api-server"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "bun",
+  "version": "1.0.0",
+  "description": "Bun runtime starter with Elysia web framework, TypeScript, and ultra-fast package resolution",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Bun + Elysia app", "required": false},
+    {"name": "port", "description": "Server port", "default": "3000", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["bun install"],
+    "setup": ["echo 'Bun project created!'", "echo 'Run: bun run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["bun >= 1.0"]
+  },
+  "required_files": ["package.json", "src/index.ts"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["bun", "elysia", "typescript", "api"], "category": "api-server"
+  }
+}

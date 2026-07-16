@@ -1,0 +1,15 @@
+{
+  "name": "{{ project_name }}",
+  "version": "{{ version }}",
+  "description": "{{ description }}",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "morgan": "^1.10.0"
+  }
+}

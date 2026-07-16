@@ -1,0 +1,26 @@
+{
+  "name": "nuxt",
+  "version": "1.0.0",
+  "description": "Nuxt 3 Vue framework with file-based routing, SSR/SSG, and auto-imports",
+  "type": "framework",
+  "framework": "vue",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Nuxt 3 app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Nuxt project created!'", "echo 'Run: npm run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["nuxt", "vue"], "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "nuxt.config.ts", "app.vue"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", ".nuxt", "dist"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "vue", "nuxt", "ssr", "ssg"], "category": "web-framework"
+  }
+}

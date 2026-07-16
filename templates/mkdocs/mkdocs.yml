@@ -1,0 +1,13 @@
+site_name: {{ project_name }}
+site_description: {{ description }}
+site_author: {{ author }}
+
+theme:
+  name: material
+  palette:
+    primary: indigo
+
+nav:
+  - Home: index.md
+  - Guide: guide.md
+  - About: about.md

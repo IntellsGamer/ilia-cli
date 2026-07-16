@@ -1,0 +1,26 @@
+{
+  "name": "spring",
+  "version": "1.0.0",
+  "description": "Spring Boot 3 Java web application with REST controllers, Maven build, and embedded Tomcat",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Spring Boot app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": [],
+    "setup": ["echo 'Spring Boot project created!'", "echo 'Run: mvn spring-boot:run'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["java >= 17", "maven >= 3.8"]
+  },
+  "required_files": ["pom.xml"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "target"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "java", "spring", "spring-boot", "rest"], "category": "api-server"
+  }
+}

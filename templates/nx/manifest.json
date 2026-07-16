@@ -1,0 +1,26 @@
+{
+  "name": "nx",
+  "version": "1.0.0",
+  "description": "Nx monorepo workspace with task orchestration, dependency graph, caching, and generators",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "Workspace name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Workspace version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Workspace description", "default": "An Nx monorepo", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Nx monorepo created!'", "echo 'Run: npx nx serve'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["nx"], "system": ["node >= 18"]
+  },
+  "required_files": [],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "dist", ".nx"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["monorepo", "nx", "workspace", "build-tool"], "category": "infrastructure"
+  }
+}

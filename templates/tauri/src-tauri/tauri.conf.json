@@ -1,0 +1,12 @@
+{
+  "productName": "{{ project_name }}",
+  "version": "{{ version }}",
+  "identifier": "com.{{ project_name }}.app",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{ "title": "{{ project_name }}", "width": 1024, "height": 768 }]
+  }
+}

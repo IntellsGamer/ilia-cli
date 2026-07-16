@@ -1,0 +1,26 @@
+{
+  "name": "astro",
+  "version": "1.0.0",
+  "description": "Astro static site generator with island architecture, multi-page routing, and zero-JS by default",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "Site name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Site version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Site description", "default": "An Astro site", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Astro site created!'", "echo 'Run: npm run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["astro"], "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "astro.config.mjs", "src/pages/index.astro"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "dist"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "astro", "ssg", "static"], "category": "static-site"
+  }
+}

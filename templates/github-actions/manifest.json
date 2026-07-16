@@ -1,0 +1,26 @@
+{
+  "name": "github-actions",
+  "version": "1.0.0",
+  "description": "GitHub Actions CI/CD workflows with automated testing, linting, and deployment pipelines",
+  "type": "files",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "Project name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Project version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Project description", "default": "GitHub Actions workflows", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": [],
+    "setup": ["echo 'GitHub Actions workflows created!'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["git"]
+  },
+  "required_files": [".github/workflows/ci.yml"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["ci", "cd", "github-actions", "devops", "automation"], "category": "infrastructure"
+  }
+}

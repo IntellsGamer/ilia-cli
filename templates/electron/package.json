@@ -1,0 +1,12 @@
+{
+  "name": "{{ project_name }}",
+  "version": "{{ version }}",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^33.0.0"
+  }
+}

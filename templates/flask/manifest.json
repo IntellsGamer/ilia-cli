@@ -1,0 +1,40 @@
+{
+  "name": "flask",
+  "version": "2.0.0",
+  "description": "Flask web application with Bootstrap frontend, multiple pages, and static assets",
+  "type": "framework",
+  "framework": "flask",
+  "variables": [
+    {"name": "project_name", "description": "Project name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Project version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Project description", "default": "A Flask web application", "required": false},
+    {"name": "license", "description": "Project license", "default": "MIT", "required": false},
+    {"name": "secret_key", "description": "Flask secret key", "default": "", "required": false},
+    {"name": "port", "description": "Application port", "default": "5000", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "pip install -r requirements.txt"
+    ],
+    "setup": [
+      "echo 'Flask project {{ project_name }} created!'",
+      "echo 'Run: python app.py'"
+    ]
+  },
+  "dependencies": {
+    "python": ["flask", "werkzeug", "python-dotenv"],
+    "node": [],
+    "system": []
+  },
+  "required_files": ["app.py", "requirements.txt"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "venv", ".venv", "env"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "python", "flask", "bootstrap"],
+    "category": "web-framework"
+  }
+}

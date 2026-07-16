@@ -1,0 +1,26 @@
+{
+  "name": "prisma",
+  "version": "1.0.0",
+  "description": "Prisma ORM starter with SQLite, auto-generated client, schema migrations, and TypeScript",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "Project name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Project version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Project description", "default": "A Prisma project", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install", "npx prisma generate", "npx prisma db push"],
+    "setup": ["echo 'Prisma project created!'", "echo 'Run: npm run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["prisma", "@prisma/client", "typescript"], "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "prisma/schema.prisma"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "dist"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["orm", "prisma", "database", "typescript"], "category": "data-layer"
+  }
+}

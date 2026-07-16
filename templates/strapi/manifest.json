@@ -1,0 +1,26 @@
+{
+  "name": "strapi",
+  "version": "1.0.0",
+  "description": "Strapi headless CMS with admin panel, REST/GraphQL API, content types, and plugin system",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "CMS name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "CMS version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "CMS description", "default": "A Strapi CMS", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Strapi CMS created!'", "echo 'Run: npm run develop'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["@strapi/strapi"], "system": ["node >= 18"]
+  },
+  "required_files": [],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", ".tmp", "build"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["cms", "strapi", "headless", "node", "api"], "category": "cms"
+  }
+}

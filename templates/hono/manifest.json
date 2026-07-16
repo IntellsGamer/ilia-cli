@@ -1,0 +1,27 @@
+{
+  "name": "hono",
+  "version": "1.0.0",
+  "description": "Hono lightweight TypeScript web framework with middleware support and fast routing",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "API name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "API version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "API description", "default": "A Hono API server", "required": false},
+    {"name": "port", "description": "Server port", "default": "3000", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Hono project created!'", "echo 'Run: npm run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["hono", "typescript"], "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "tsconfig.json", "src/index.ts"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "dist"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "typescript", "hono", "web"], "category": "api-server"
+  }
+}

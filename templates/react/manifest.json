@@ -1,0 +1,37 @@
+{
+  "name": "react",
+  "version": "1.0.0",
+  "description": "React 18 single-page application with Create React App structure and component-based architecture",
+  "type": "framework",
+  "framework": "react",
+  "variables": [
+    {"name": "project_name", "description": "Application name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Application version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Application description", "default": "A React application", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "npm install"
+    ],
+    "setup": [
+      "echo 'React project {{ project_name }} created!'",
+      "echo 'Run: npm start'"
+    ]
+  },
+  "dependencies": {
+    "python": [],
+    "node": ["react", "react-dom", "react-scripts"],
+    "system": ["node >= 14"]
+  },
+  "required_files": ["package.json", "public/index.html"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "build"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "react", "spa", "javascript"],
+    "category": "web-framework"
+  }
+}

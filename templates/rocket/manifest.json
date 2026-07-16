@@ -1,0 +1,26 @@
+{
+  "name": "rocket",
+  "version": "1.0.0",
+  "description": "Rocket Rust web framework with type-safe routing, compile-time checks, and async support",
+  "type": "framework",
+  "framework": "rust",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Rocket app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": [],
+    "setup": ["echo 'Rocket project created!'", "echo 'Run: cargo run'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["rust >= 1.70", "cargo"]
+  },
+  "required_files": ["Cargo.toml", "src/main.rs"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "target"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "rust", "rocket", "async", "web"], "category": "api-server"
+  }
+}

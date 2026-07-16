@@ -1,0 +1,26 @@
+{
+  "name": "rails",
+  "version": "1.0.0",
+  "description": "Ruby on Rails web framework with ActiveRecord, Action Cable, and convention-over-configuration",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Rails app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["bundle install"],
+    "setup": ["echo 'Rails project created!'", "echo 'Run: rails server'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["ruby >= 3.2", "bundler", "rails"]
+  },
+  "required_files": [],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "vendor", "node_modules"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "ruby", "rails", "framework"], "category": "web-framework"
+  }
+}

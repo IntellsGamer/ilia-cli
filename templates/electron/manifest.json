@@ -1,0 +1,26 @@
+{
+  "name": "electron",
+  "version": "1.0.0",
+  "description": "Electron desktop application with native window management and Chromium rendering",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "An Electron app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Electron project created!'", "echo 'Run: npm start'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["electron"], "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "main.js", "index.html"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["desktop", "electron", "cross-platform"], "category": "desktop-app"
+  }
+}

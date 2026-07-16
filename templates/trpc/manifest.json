@@ -1,0 +1,27 @@
+{
+  "name": "trpc",
+  "version": "1.0.0",
+  "description": "tRPC + Next.js app with end-to-end type safety, React Query, Zod validation, and superjson",
+  "type": "framework",
+  "framework": "react",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A tRPC app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'tRPC project created!'", "echo 'Run: npm run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["@trpc/server", "@trpc/client", "@trpc/react-query", "@tanstack/react-query", "next", "react", "zod", "superjson"],
+    "system": ["node >= 18"]
+  },
+  "required_files": ["package.json", "src/server/trpc.ts", "src/pages/_app.tsx"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", ".next"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["trpc", "nextjs", "typescript", "rpc", "react-query"], "category": "web-framework"
+  }
+}

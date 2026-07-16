@@ -1,0 +1,38 @@
+{
+  "name": "express",
+  "version": "1.0.0",
+  "description": "Express.js REST API server with CORS, logging middleware, and environment configuration",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "API name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "API version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "API description", "default": "An Express API server", "required": false},
+    {"name": "port", "description": "Server port", "default": "3000", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "npm install"
+    ],
+    "setup": [
+      "echo 'Express project {{ project_name }} created!'",
+      "echo 'Run: npm run dev'"
+    ]
+  },
+  "dependencies": {
+    "python": [],
+    "node": ["express", "cors", "morgan"],
+    "system": ["node >= 16"]
+  },
+  "required_files": ["package.json", "index.js"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["api", "node", "express", "rest", "server"],
+    "category": "api-server"
+  }
+}

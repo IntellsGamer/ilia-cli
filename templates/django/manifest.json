@@ -1,0 +1,41 @@
+{
+  "name": "django",
+  "version": "1.0.0",
+  "description": "Django project with config settings, core app, admin interface, and SQLite database",
+  "type": "framework",
+  "framework": "django",
+  "variables": [
+    {"name": "project_name", "description": "Project name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Project version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Project description", "default": "A Django project", "required": false},
+    {"name": "secret_key", "description": "Django secret key", "default": "", "required": false},
+    {"name": "debug", "description": "Debug mode", "default": "True", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "pip install -r requirements.txt",
+      "python manage.py migrate"
+    ],
+    "setup": [
+      "echo 'Django project {{ project_name }} created!'",
+      "echo 'Run: python manage.py runserver'",
+      "echo 'Admin: http://localhost:8000/admin/'"
+    ]
+  },
+  "dependencies": {
+    "python": ["django", "python-dotenv"],
+    "node": [],
+    "system": []
+  },
+  "required_files": ["manage.py", "config/settings.py"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "venv", ".venv", "env", "db.sqlite3"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "python", "django", "orm", "admin"],
+    "category": "web-framework"
+  }
+}

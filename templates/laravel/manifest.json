@@ -1,0 +1,26 @@
+{
+  "name": "laravel",
+  "version": "1.0.0",
+  "description": "Laravel PHP web framework with Artisan CLI, Eloquent ORM, Blade templating, and routing",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "App name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "App version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "App description", "default": "A Laravel app", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["composer install"],
+    "setup": ["echo 'Laravel project created!'", "echo 'Run: php artisan serve'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["php >= 8.2", "composer"]
+  },
+  "required_files": [],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "vendor", "node_modules"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "php", "laravel", "framework"], "category": "web-framework"
+  }
+}

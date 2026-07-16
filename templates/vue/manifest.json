@@ -1,0 +1,37 @@
+{
+  "name": "vue",
+  "version": "1.0.0",
+  "description": "Vue 3 single-page application with Vite build tool, SFC components, and HMR",
+  "type": "framework",
+  "framework": "vue",
+  "variables": [
+    {"name": "project_name", "description": "Application name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Application version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Application description", "default": "A Vue 3 application", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "npm install"
+    ],
+    "setup": [
+      "echo 'Vue project {{ project_name }} created!'",
+      "echo 'Run: npm run dev'"
+    ]
+  },
+  "dependencies": {
+    "python": [],
+    "node": ["vue", "vite"],
+    "system": ["node >= 16"]
+  },
+  "required_files": ["package.json", "index.html", "vite.config.js"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "dist"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["web", "vue", "vite", "spa", "javascript"],
+    "category": "web-framework"
+  }
+}

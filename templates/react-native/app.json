@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "{{ project_name }}",
+    "slug": "{{ project_name }}",
+    "version": "{{ version }}",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png"
+  }
+}

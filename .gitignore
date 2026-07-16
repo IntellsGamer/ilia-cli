@@ -8,3 +8,9 @@ une.py
 schematic_deploy_new.py
 installer.bat
 idk.html
+OUTPUT*/*
+OUTPUT*/*.*
+OUTPUT*
+3root.py
+
+__pycache__

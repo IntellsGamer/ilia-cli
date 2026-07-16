@@ -1,0 +1,26 @@
+{
+  "name": "turborepo",
+  "version": "1.0.0",
+  "description": "Turborepo monorepo manager with parallel task execution, caching, and remote caching support",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "Workspace name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Workspace version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Workspace description", "default": "A Turborepo monorepo", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["npm install"],
+    "setup": ["echo 'Turborepo monorepo created!'", "echo 'Run: npm run dev'"]
+  },
+  "dependencies": {
+    "python": [], "node": ["turbo"], "system": ["node >= 18"]
+  },
+  "required_files": [],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules", "dist", ".turbo"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["monorepo", "turborepo", "workspace", "build-tool"], "category": "infrastructure"
+  }
+}

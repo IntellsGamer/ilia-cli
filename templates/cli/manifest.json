@@ -1,0 +1,40 @@
+{
+  "name": "cli",
+  "version": "1.0.0",
+  "description": "Python CLI tool skeleton with argparse, setup.py packaging, and pytest test suite",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "CLI tool name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Tool version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Tool description", "default": "A CLI tool", "required": false},
+    {"name": "license", "description": "Project license", "default": "MIT", "required": false},
+    {"name": "email", "description": "Author email", "default": "", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [],
+    "post_copy": [
+      "pip install -e ."
+    ],
+    "setup": [
+      "echo 'CLI project {{ project_name }} created!'",
+      "echo 'Run: {{ project_name }} --help'",
+      "echo 'Test: pip install pytest && pytest'"
+    ]
+  },
+  "dependencies": {
+    "python": [],
+    "node": [],
+    "system": []
+  },
+  "required_files": ["cli.py", "setup.py"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "venv", ".venv", "env", "*.egg-info"],
+  "metadata": {
+    "author": "APD",
+    "created": "2026-06-30T13:00:00",
+    "modified": "2026-06-30T13:00:00",
+    "tags": ["cli", "python", "tool", "argparse"],
+    "category": "cli-tool"
+  }
+}

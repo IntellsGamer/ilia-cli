@@ -1,0 +1,26 @@
+{
+  "name": "discord-bot",
+  "version": "1.0.0",
+  "description": "Discord.py bot with command framework, event handlers, and environment configuration",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "Bot name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Bot version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Bot description", "default": "A Discord bot", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": ["pip install -r requirements.txt"],
+    "setup": ["echo 'Discord bot created!'", "echo 'Add your token and run: python bot.py'"]
+  },
+  "dependencies": {
+    "python": ["discord.py", "python-dotenv"], "node": [], "system": []
+  },
+  "required_files": ["bot.py", "requirements.txt"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "venv", ".venv"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["discord", "bot", "python", "async"], "category": "bot"
+  }
+}

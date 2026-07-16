@@ -1,0 +1,27 @@
+{
+  "name": "docker",
+  "version": "1.0.0",
+  "description": "Docker Compose project with multi-service setup, PostgreSQL, and containerized app development",
+  "type": "framework",
+  "framework": "custom",
+  "variables": [
+    {"name": "project_name", "description": "Project name", "default": "", "required": true},
+    {"name": "author", "description": "Author name", "default": "", "required": false},
+    {"name": "version", "description": "Project version", "default": "1.0.0", "required": false},
+    {"name": "description", "description": "Project description", "default": "A Docker Compose project", "required": false},
+    {"name": "port", "description": "App port", "default": "3000", "required": false}
+  ],
+  "commands": {
+    "pre_copy": [], "post_copy": [],
+    "setup": ["echo 'Docker project created!'", "echo 'Run: docker compose up'"]
+  },
+  "dependencies": {
+    "python": [], "node": [], "system": ["docker", "docker-compose"]
+  },
+  "required_files": ["docker-compose.yml", "Dockerfile"],
+  "ignore_patterns": [".git", "__pycache__", "*.pyc", ".DS_Store", "node_modules"],
+  "metadata": {
+    "author": "APD", "created": "2026-06-30T13:00:00", "modified": "2026-06-30T13:00:00",
+    "tags": ["docker", "compose", "container", "devops"], "category": "infrastructure"
+  }
+}
