@@ -4846,11 +4846,11 @@ python "{script_path}" update --verify
             remote_templates = self._fetch_remote_template_list(use_cache=not no_cache)
             if remote_templates:
                 for rt in remote_templates:
-                    # Try to get manifest info for each remote template
-                    manifest = self._fetch_remote_template_manifest(rt['name'])
-                    rt['type'] = manifest.get('framework', 'custom') if manifest else 'custom'
-                    rt['framework'] = manifest.get('framework', 'custom') if manifest else 'custom'
-                    rt['variables'] = len(manifest.get('variables', [])) if manifest else 0
+                    # Don't fetch manifest for each template during list (too slow)
+                    # Just show basic info
+                    rt['type'] = 'Unknown'
+                    rt['framework'] = 'Unknown'
+                    rt['variables'] = '?'
                     rt['source'] = 'remote'
                     rt['files'] = '?'
                     rt['size'] = '?'
@@ -4885,7 +4885,9 @@ python "{script_path}" update --verify
 
         print(f"\n📍 Local: {self.templates_dir}")
         if online:
-            print(f"🌐 Remote: {self.config.get('TEMPLATE_REPO', 'owner', '')}/{self.config.get('TEMPLATE_REPO', 'repo', '')}")
+            owner = self.config.get('TEMPLATE_REPO', 'owner', fallback='IntellsGamer')
+            repo = self.config.get('TEMPLATE_REPO', 'repo', fallback='ilia-cli')
+            print(f"🌐 Remote: {owner}/{repo}")
             if no_cache:
                 print("   ℹ️  Fetched fresh (cache skipped)")
             elif self._is_cache_valid():
