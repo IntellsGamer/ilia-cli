@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.0.0
+Version: 3.1.0
 """
+__version__ = "3.1.0"
 import threading
 import urllib.request
 import urllib.error
@@ -3718,63 +3719,57 @@ Thumbs.db
         print()
         print(self._style("Run 'apd doctor' for detailed diagnostics.", color="90"))
     
-    def _get_remote_file_info(self) -> Tuple[Optional[str], Optional[str], Optional[int]]:
-        """Get remote file SHA, timestamp, and content from the repo."""
+    def _get_remote_version(self) -> Optional[str]:
+        """Get the version string from the remote schematic_deploy.py."""
         owner, repo, path, branch = self._get_repo_info()
         if not owner or not repo:
-            return None, None, None
+            return None
 
-        # Get file info from GitHub API
-        api_url = f'https://api.github.com/repos/{owner}/{repo}/contents/schematic_deploy.py'
+        raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/schematic_deploy.py'
         token = self.config.get('TEMPLATE_REPO', 'token', fallback=None)
-        headers = {
-            'User-Agent': f'APD/{self.version}',
-            'Accept': 'application/vnd.github.v3+json'
-        }
+        headers = {'User-Agent': f'APD/{self.version}'}
         if token:
             headers['Authorization'] = f'token {token}'
 
         try:
-            req = urllib.request.Request(api_url, headers=headers)
+            req = urllib.request.Request(raw_url, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-                sha = data.get('sha', '')
-                # Get commit timestamp from the file's last commit
-                commit_url = data.get('_links', {}).get('html', '').replace('/blob/', '/commits/')
-                if commit_url:
-                    # Try to get commit info
-                    try:
-                        req2 = urllib.request.Request(commit_url, headers=headers)
-                        with urllib.request.urlopen(req2, timeout=10) as resp2:
-                            commit_data = json.loads(resp2.read().decode())
-                            if commit_data and isinstance(commit_data, list) and commit_data:
-                                timestamp_str = commit_data[0].get('commit', {}).get('committer', {}).get('date', '')
-                                if timestamp_str:
-                                    timestamp = int(datetime.fromisoformat(timestamp_str.replace('Z', '+00:00')).timestamp())
-                                    return sha, None, timestamp
-                    except Exception:
-                        pass
-                # Fallback: use file's SHA as version identifier
-                return sha, None, None
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                print("⚠️  Remote schematic_deploy.py not found in repository.")
-            else:
-                self.log_activity('debug', f'Failed to fetch remote file info: {e}')
-            return None, None, None
+                content = resp.read().decode('utf-8')
+                # Extract version from the file using regex
+                import re
+                match = re.search(r'^Version:\s*([\d.]+)', content, re.MULTILINE)
+                if match:
+                    return match.group(1)
+                # Fallback: look for __version__ = "X.X.X"
+                match = re.search(r'__version__\s*=\s*["\']([\d.]+)["\']', content)
+                if match:
+                    return match.group(1)
+                # If no version found, use the first 8 chars of SHA as a fallback
+                return hashlib.sha256(content.encode()).hexdigest()[:8]
         except Exception as e:
-            self.log_activity('debug', f'Failed to fetch remote file info: {e}')
-            return None, None, None
+            self.log_activity('debug', f'Failed to fetch remote version: {e}')
+            return None
 
-    def _get_local_file_sha(self) -> Optional[str]:
-        """Calculate SHA of the local schematic_deploy.py file."""
+    def _get_local_version(self) -> Optional[str]:
+        """Get the version string from the local schematic_deploy.py."""
         try:
-            # Get the path of the currently running script
             script_path = Path(sys.argv[0]).resolve()
             if not script_path.exists():
                 return None
-            with open(script_path, 'rb') as f:
-                return hashlib.sha256(f.read()).hexdigest()
+            with open(script_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                import re
+                # Look for Version: X.X.X in the docstring
+                match = re.search(r'^Version:\s*([\d.]+)', content, re.MULTILINE)
+                if match:
+                    return match.group(1)
+                # Look for __version__ = "X.X.X"
+                match = re.search(r'__version__\s*=\s*["\']([\d.]+)["\']', content)
+                if match:
+                    return match.group(1)
+                # Fallback: use file's SHA
+                with open(script_path, 'rb') as fb:
+                    return hashlib.sha256(fb.read()).hexdigest()[:8]
         except Exception:
             return None
 
@@ -3798,6 +3793,13 @@ Thumbs.db
             req = urllib.request.Request(raw_url, headers=headers)
             with urllib.request.urlopen(req, timeout=15) as resp:
                 return resp.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print("⚠️  Remote schematic_deploy.py not found in repository.")
+                print(f"   Check: https://github.com/{owner}/{repo}/blob/{branch}/schematic_deploy.py")
+            else:
+                print(f"⚠️  HTTP Error {e.code}: Could not download file.")
+            return None
         except Exception as e:
             self.log_activity('debug', f'Failed to download remote file: {e}')
             return None
@@ -3813,14 +3815,14 @@ Thumbs.db
             return
 
         try:
-            remote_sha, _, remote_timestamp = self._get_remote_file_info()
-            if not remote_sha:
+            remote_version = self._get_remote_version()
+            if not remote_version:
                 if not silent:
                     print("❌ Could not fetch remote version information.")
                 return
 
-            local_sha = self._get_local_file_sha()
-            if not local_sha:
+            local_version = self._get_local_version()
+            if not local_version:
                 if not silent:
                     print("❌ Could not read local file.")
                 return
@@ -3829,14 +3831,16 @@ Thumbs.db
             self.config['DEFAULT']['last_update_check'] = str(int(time.time()))
             self.save_config()
 
-            if remote_sha != local_sha:
+            # Compare versions (simple string compare, assumes semantic versioning)
+            if remote_version != local_version:
                 if not silent:
                     self._panel(
                         "Update Available!",
                         [
-                            f"Current version: {self.version}",
+                            f"Local version: {local_version}",
+                            f"Remote version: {remote_version}",
                             "A newer version is available.",
-                            "Run 'apd update' to download and install it.",
+                            "Run 'apd update --force' to download and install it.",
                         ],
                         tone="warn",
                     )
@@ -3847,7 +3851,7 @@ Thumbs.db
                         "Update Result",
                         [
                             "You have the latest version installed.",
-                            f"Current version: {self.version}",
+                            f"Version: {local_version}",
                         ],
                         tone="ok",
                     )
