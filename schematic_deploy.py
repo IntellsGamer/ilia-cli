@@ -1202,6 +1202,10 @@ class ILIACLI:
                 'import': 'templates import',
                 'install': 'templates install',
                 'export': 'templates export',
+                'list-online': 'templates list --online',
+                'lo': 'templates list --online',
+                'search-online': 'templates search --online',
+                'so': 'templates search --online',
                 'preview': 'templates preview',
                 'info': 'templates info',
                 'validate': 'templates validate',
@@ -1658,9 +1662,9 @@ class ILIACLI:
             ]),
             ("Templates", [
                 ("templates", "List available templates"),
-                ("templates list", "List templates with details"),
-                ("templates search <term>", "Search templates locally and on remote repo"),
-                ("templates install <name>", "Download and install template from remote repo"),
+                ("templates list [--online|-o] [--no-cache|-nc]", "List templates with details"),
+                ("templates search <term> [--no-cache|-nc]", "Search templates locally and on remote repo"),
+                ("templates install <name> [--no-cache|-nc]", "Download and install template from remote repo"),
                 ("templates create <name>", "Create template from current directory"),
                 ("templates info <name>", "Show manifest details"),
                 ("templates validate <name>", "Validate template structure"),
@@ -4024,10 +4028,10 @@ Thumbs.db
             ]),
             ("Templates", [
                 ("templates", "List available templates"),
-                ("templates list", "List templates with details"),
+                ("templates list [--online|-o] [--no-cache|-nc]", "List templates with details (show remote with -o)"),
                 ("templates preview <name>", "Preview template structure"),
-                ("templates search <term>", "Search templates locally and on remote repo"),
-                ("templates install <name>", "Download and install template from remote repo"),
+                ("templates search <term> [--no-cache|-nc]", "Search templates locally and on remote repo"),
+                ("templates install <name> [--no-cache|-nc]", "Download and install template from remote repo"),
                 ("templates create <name>", "Create template from current directory"),
                 ("templates info <name>", "Show manifest details"),
                 ("templates validate <name>", "Validate template structure"),
@@ -4452,7 +4456,105 @@ Thumbs.db
             except Exception:
                 pass
 
-    def list_templates(self):
+    def _get_cache_file(self) -> Path:
+        """Get the cache file path for remote template list."""
+        cache_dir = self.config_dir / 'cache'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir / 'remote_templates_cache.json'
+
+    def _is_cache_valid(self) -> bool:
+        """Check if the cached remote template list is still valid (1 hour)."""
+        cache_file = self._get_cache_file()
+        if not cache_file.exists():
+            return False
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            cached_at = data.get('cached_at', 0)
+            # Cache expires after 1 hour (3600 seconds)
+            if time.time() - cached_at > 3600:
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _get_cached_remote_templates(self) -> Optional[List[Dict[str, Any]]]:
+        """Get cached remote template list if valid."""
+        if not self._is_cache_valid():
+            return None
+        cache_file = self._get_cache_file()
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return data.get('templates', [])
+        except Exception:
+            return None
+
+    def _save_remote_templates_cache(self, templates: List[Dict[str, Any]]):
+        """Save remote template list to cache."""
+        cache_file = self._get_cache_file()
+        try:
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'cached_at': time.time(),
+                    'templates': templates
+                }, f, indent=2)
+        except Exception as e:
+            self.log_activity('debug', f'Failed to save remote templates cache: {e}')
+
+    def _fetch_remote_template_list(self, use_cache: bool = True) -> List[Dict[str, Any]]:
+        """Fetch list of available templates from the remote repository."""
+        if use_cache:
+            cached = self._get_cached_remote_templates()
+            if cached is not None:
+                return cached
+
+        if not self.check_internet():
+            return []
+
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return []
+
+        # Try with token if configured
+        token = self.config.get('TEMPLATE_REPO', 'token', fallback=None)
+        headers = {
+            'User-Agent': f'APD/{self.version}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        if token:
+            headers['Authorization'] = f'token {token}'
+
+        api_url = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
+        try:
+            req = urllib.request.Request(api_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            templates = []
+            for item in data:
+                if item.get('type') == 'dir':
+                    templates.append({
+                        'name': item['name'],
+                        'path': item['path'],
+                        'api_url': item['url'],
+                        'source': 'remote',
+                    })
+            # Cache the result
+            if templates:
+                self._save_remote_templates_cache(templates)
+            return templates
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print(f"⚠️  Remote repository not found or private. Check your TEMPLATE_REPO config.")
+                self.log_activity('warning', f'Remote repo fetch failed (404): {api_url}')
+            else:
+                self.log_activity('debug', f'Failed to fetch remote templates: {e}')
+            return []
+        except Exception as e:
+            self.log_activity('debug', f'Failed to fetch remote templates: {e}')
+            return []
+
+    def list_templates(self, online: bool = False, no_cache: bool = False):
         """List all available templates with details."""
         print("\nAvailable Templates")
         print("=" * 60)
@@ -4474,7 +4576,27 @@ Thumbs.db
                     'modified': datetime.fromtimestamp(item.stat().st_mtime).strftime('%Y-%m-%d'),
                     'framework': manifest.data.get('framework', 'custom') if manifest else 'custom',
                     'variables': variables_count,
+                    'source': 'local',
                 })
+
+        remote_templates = []
+        if online:
+            print("🌐 Fetching remote templates...")
+            remote_templates = self._fetch_remote_template_list(use_cache=not no_cache)
+            if remote_templates:
+                for rt in remote_templates:
+                    # Try to get manifest info for each remote template
+                    manifest = self._fetch_remote_template_manifest(rt['name'])
+                    rt['type'] = manifest.get('framework', 'custom') if manifest else 'custom'
+                    rt['framework'] = manifest.get('framework', 'custom') if manifest else 'custom'
+                    rt['variables'] = len(manifest.get('variables', [])) if manifest else 0
+                    rt['source'] = 'remote'
+                    rt['files'] = '?'
+                    rt['size'] = '?'
+                    rt['modified'] = '?'
+                    templates.append(rt)
+            else:
+                print("⚠️  No remote templates found (check internet or repo settings)")
 
         if not templates:
             print("❌ No templates found!")
@@ -4485,19 +4607,30 @@ Thumbs.db
             return
 
         rows = []
-        for template in sorted(templates, key=lambda item: item['name'].lower()):
+        for template in sorted(templates, key=lambda item: item.get('name', '').lower()):
+            source = template.get('source', 'local')
+            source_label = "📁 local" if source == 'local' else "🌐 remote"
             rows.append([
-                template['name'],
-                template['type'],
-                template['framework'],
-                str(template['variables']),
-                self.format_size(template['size']),
-                template['modified'],
+                template.get('name', ''),
+                template.get('type', 'Unknown'),
+                template.get('framework', 'Unknown'),
+                str(template.get('variables', 0)),
+                template.get('size', '?') if isinstance(template.get('size'), str) else self.format_size(template.get('size', 0)),
+                template.get('modified', '?'),
+                source_label,
             ])
 
-        self._render_table(["Template", "Type", "Framework", "Vars", "Size", "Modified"], rows)
+        self._render_table(["Template", "Type", "Framework", "Vars", "Size", "Modified", "Source"], rows)
 
-        print(f"\nLocation: {self.templates_dir}")
+        print(f"\n📍 Local: {self.templates_dir}")
+        if online:
+            print(f"🌐 Remote: {self.config.get('TEMPLATE_REPO', 'owner', '')}/{self.config.get('TEMPLATE_REPO', 'repo', '')}")
+            if no_cache:
+                print("   ℹ️  Fetched fresh (cache skipped)")
+            elif self._is_cache_valid():
+                print("   ℹ️  From cache (valid for 1 hour)")
+            else:
+                print("   ℹ️  Fresh fetch (cache updated)")
         print("\nCommands:")
         print("  apd templates preview <name>")
         print("  apd templates search <term>")
@@ -4505,7 +4638,7 @@ Thumbs.db
         print("  apd templates clone <src> <dst>")
         print("  apd templates export <name>")
 
-    def manage_templates(self, action: str = None, template_name: str = None):
+    def manage_templates(self, action: str = None, template_name: str = None, no_cache: bool = False, online: bool = False):
         """Manage templates."""
         if action == "add":
             self.add_template_from_current(template_name)
@@ -4515,8 +4648,10 @@ Thumbs.db
             self.import_template(template_name)
         elif action == "export":
             self.export_template(template_name)
+        elif action == "list":
+            self.list_templates(online=online, no_cache=no_cache)
         else:
-            self.list_templates()
+            self.list_templates(online=online, no_cache=no_cache)
 
     def add_template_from_current(self, template_name: str = None):
         """Add a template from current directory."""
@@ -4826,7 +4961,7 @@ Thumbs.db
             self.log_activity('debug', f'Failed to fetch template file list: {e}')
             return []
 
-    def search_templates(self, query: str):
+    def search_templates(self, query: str, no_cache: bool = False):
         """Search templates locally and remotely (if internet available)."""
         needle = query.strip().lower()
         local_matches = []
@@ -4845,7 +4980,7 @@ Thumbs.db
         remote_matches = []
         online = self.check_internet()
         if online:
-            remote_templates = self._fetch_remote_template_list()
+            remote_templates = self._fetch_remote_template_list(use_cache=not no_cache)
             for rt in remote_templates:
                 name = rt['name'].lower()
                 manifest = self._fetch_remote_template_manifest(rt['name'])
@@ -4894,7 +5029,12 @@ Thumbs.db
                 ])
             self._render_table(["Template", "Framework", "Vars", "Description", "Source"], rows)
 
-    def install_template_from_repo(self, template_name: str):
+        if no_cache:
+            print("\nℹ️  Fetched fresh (cache skipped)")
+        elif online and self._is_cache_valid():
+            print("\nℹ️  From cache (valid for 1 hour)")
+
+    def install_template_from_repo(self, template_name: str, no_cache: bool = False):
         """Download and install a template from the remote repository."""
         template_name = template_name.strip()
         if not template_name:
@@ -4910,7 +5050,7 @@ Thumbs.db
             shutil.rmtree(dst)
 
         print(f"Looking up '{template_name}' in remote repository...")
-        remote_list = self._fetch_remote_template_list()
+        remote_list = self._fetch_remote_template_list(use_cache=not no_cache)
         found = None
         for rt in remote_list:
             if rt['name'].lower() == template_name.lower():
@@ -4957,68 +5097,10 @@ Thumbs.db
         print(f"\n💡 Usage: apd new myproject --template {template_name}")
         self.log_activity('info', f'Template installed from repo: {template_name}')
 
-    def install_template_from_repo(self, template_name: str):
-        """Download and install a template from the remote repository."""
-        template_name = template_name.strip()
-        if not template_name:
-            print("❌ Template name required")
-            return
-        dst = self.templates_dir / template_name
-        if dst.exists():
-            print(f"⚠️  Template '{template_name}' already exists locally.")
-            overwrite = input("Overwrite? (y/N): ").strip().lower()
-            if overwrite not in ('y', 'yes'):
-                print("Operation cancelled.")
-                return
-            shutil.rmtree(dst)
-
-        print(f"Looking up '{template_name}' in remote repository...")
-        remote_list = self._fetch_remote_template_list()
-        found = None
-        for rt in remote_list:
-            if rt['name'].lower() == template_name.lower():
-                found = rt
-                break
-        if not found:
-            print(f"❌ Template '{template_name}' not found in remote repository.")
-            print("Use 'apd templates search' to see available templates.")
-            return
-
-        print(f"Fetching file list for '{template_name}'...")
-        files = self._fetch_remote_template_file_list(template_name)
-        if not files:
-            print(f"❌ Could not fetch template files from repository.")
-            return
-
-        dst.mkdir(parents=True, exist_ok=True)
-        total = len(files)
-        for i, file_info in enumerate(files, 1):
-            rel_path = file_info['path']
-            target_file = dst / rel_path
-            target_file.parent.mkdir(parents=True, exist_ok=True)
-            print(f"  [{i}/{total}] Downloading {rel_path}...")
-            content = self._download_template_file_from_repo(rel_path, template_name)
-            if content is not None:
-                target_file.write_bytes(content)
-            else:
-                print(f"  ⚠️  Failed to download {rel_path}")
-
-        file_count = len(list(dst.rglob('*')))
-        print(f"\n✅ Template '{template_name}' installed successfully!")
-        print(f"   Files: {file_count}")
-        manifest_file = dst / 'manifest.json'
-        if manifest_file.exists():
-            try:
-                with open(manifest_file, 'r', encoding='utf-8') as f:
-                    manifest_data = json.load(f)
-                print(f"   Framework: {manifest_data.get('framework', 'custom')}")
-                print(f"   Description: {manifest_data.get('description', 'No description')}")
-            except Exception:
-                pass
-        else:
-            self._create_basic_manifest(dst, template_name)
-        print(f"\n💡 Usage: apd new myproject --template {template_name}")
-        self.log_activity('info', f'Template installed from repo: {template_name}')
+        if no_cache:
+            print("\nℹ️  Fetched fresh (cache skipped)")
+        elif self._is_cache_valid():
+            print("\nℹ️  Using cached template list")
 
     def clone_template(self, source_name: str, target_name: str):
         """Clone an installed template under a new name."""
@@ -7242,23 +7324,33 @@ trim_trailing_whitespace = false
                 self.list_templates()
                 return
 
-            subcommand = args[1]
+            # Parse flags
+            no_cache = '--no-cache' in args or '-nc' in args
+            online = '--online' in args or '-o' in args
+            # Remove flags from args list for subcommand processing
+            clean_args = [arg for arg in args[1:] if arg not in ['--no-cache', '-nc', '--online', '-o']]
+
+            if not clean_args:
+                self.list_templates(online=online, no_cache=no_cache)
+                return
+
+            subcommand = clean_args[0]
             if subcommand == 'create':
-                template_name = args[2] if len(args) > 2 else None
+                template_name = clean_args[1] if len(clean_args) > 1 else None
                 if not template_name:
                     print("Error: Template name required")
                     return
                 self.create_template_from_current(template_name, '--framework' in args)
             elif subcommand == 'list':
-                self.list_templates_with_details()
+                self.list_templates(online=online, no_cache=no_cache)
             elif subcommand == 'info':
-                template_name = args[2] if len(args) > 2 else None
+                template_name = clean_args[1] if len(clean_args) > 1 else None
                 if not template_name:
                     print("Error: Template name required")
                     return
                 self.generate_template_docs(template_name)
             elif subcommand == 'validate':
-                template_name = args[2] if len(args) > 2 else None
+                template_name = clean_args[1] if len(clean_args) > 1 else None
                 if not template_name:
                     print("Error: Template name required")
                     return
@@ -7274,7 +7366,7 @@ trim_trailing_whitespace = false
                 else:
                     print(f"Error: Template '{template_name}' not found")
             elif subcommand == 'edit':
-                template_name = args[2] if len(args) > 2 else None
+                template_name = clean_args[1] if len(clean_args) > 1 else None
                 if not template_name:
                     print("Error: Template name required")
                     return
@@ -7286,32 +7378,32 @@ trim_trailing_whitespace = false
                     print(f"Error: No manifest found for {template_name}")
                     print("Create one with: apd template create <name>")
             elif subcommand == 'preview':
-                if len(args) < 3:
+                if len(clean_args) < 2:
                     print("Error: Usage: apd templates preview <name>")
                     return
-                self.preview_template(args[2])
+                self.preview_template(clean_args[1])
             elif subcommand == 'search':
-                if len(args) < 3:
+                if len(clean_args) < 2:
                     print("Error: Usage: apd templates search <term>")
                     return
-                self.search_templates(' '.join(args[2:]))
+                self.search_templates(' '.join(clean_args[1:]), no_cache=no_cache)
             elif subcommand == 'install':
-                if len(args) < 3:
+                if len(clean_args) < 2:
                     print("Error: Usage: apd templates install <name>")
                     return
-                self.install_template_from_repo(args[2])
+                self.install_template_from_repo(clean_args[1], no_cache=no_cache)
             elif subcommand == 'clone':
-                if len(args) < 4:
+                if len(clean_args) < 3:
                     print("Error: Usage: apd templates clone <source> <target>")
                     return
-                self.clone_template(args[2], args[3])
+                self.clone_template(clean_args[1], clean_args[2])
             elif subcommand == 'score':
-                if len(args) < 3:
+                if len(clean_args) < 2:
                     print("Error: Usage: apd templates score <name>")
                     return
-                self.score_template_quality(args[2])
+                self.score_template_quality(clean_args[1])
             else:
-                self.manage_templates(subcommand, args[2] if len(args) > 2 else None)
+                self.manage_templates(subcommand, clean_args[1] if len(clean_args) > 1 else None, no_cache=no_cache, online=online)
             return
 
         if command == 'projects':
