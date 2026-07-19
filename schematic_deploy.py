@@ -3933,11 +3933,21 @@ pause
                 f.write(bat_content)
             
             # Launch the batch file in a new window and exit
-            subprocess.Popen(
-                f'start /min cmd /c "{bat_path}"',
-                shell=True,
-                creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS
-            )
+            # Use a simpler approach that works reliably on Windows
+            try:
+                # Method 1: Use start with proper quoting
+                subprocess.Popen(
+                    ['cmd', '/c', 'start', '/min', 'cmd', '/c', str(bat_path)],
+                    shell=False,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS
+                )
+            except Exception:
+                # Method 2: Fallback to simpler approach
+                subprocess.Popen(
+                    f'start /min cmd /c "{bat_path}"',
+                    shell=True,
+                    creationflags=subprocess.DETACHED_PROCESS
+                )
             
             print("\n" + "=" * 60)
             print(self._style("[OK] Update is running in the background!", color="32", bold=True))
