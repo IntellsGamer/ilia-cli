@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.2.0
+Version: 3.2.1
 """
-__version__ = "3.2.0"
+__version__ = "3.2.1"
 import threading
 import urllib.request
 import urllib.error
