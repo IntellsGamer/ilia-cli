@@ -5037,19 +5037,32 @@ python "{script_path}" update --verify
         branch = self.config.get('TEMPLATE_REPO', 'branch', fallback='main')
         return owner, repo, path, branch
 
-    def _fetch_remote_template_list(self) -> List[Dict[str, Any]]:
+    def _fetch_remote_template_list(self, use_cache: bool = True) -> List[Dict[str, Any]]:
         """Fetch list of available templates from the remote repository."""
+        if use_cache:
+            cached = self._get_cached_remote_templates()
+            if cached is not None:
+                return cached
+
         if not self.check_internet():
             return []
+
         owner, repo, path, branch = self._get_repo_info()
         if not owner or not repo:
             return []
+
+        # Try with token if configured
+        token = self.config.get('TEMPLATE_REPO', 'token', fallback=None)
+        headers = {
+            'User-Agent': f'APD/{self.version}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        if token:
+            headers['Authorization'] = f'token {token}'
+
         api_url = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
         try:
-            req = urllib.request.Request(api_url, headers={
-                'User-Agent': f'APD/{self.version}',
-                'Accept': 'application/vnd.github.v3+json'
-            })
+            req = urllib.request.Request(api_url, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
             templates = []
@@ -5061,105 +5074,17 @@ python "{script_path}" update --verify
                         'api_url': item['url'],
                         'source': 'remote',
                     })
+            # Cache the result
+            if templates:
+                self._save_remote_templates_cache(templates)
             return templates
-        except Exception as e:
-            self.log_activity('debug', f'Failed to fetch remote templates: {e}')
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print(f"⚠️  Remote repository not found or private. Check your TEMPLATE_REPO config.")
+                self.log_activity('warning', f'Remote repo fetch failed (404): {api_url}')
+            else:
+                self.log_activity('debug', f'Failed to fetch remote templates: {e}')
             return []
-
-    def _fetch_remote_template_manifest(self, template_name: str) -> Optional[Dict[str, Any]]:
-        """Fetch a single template's manifest.json from the remote repo."""
-        owner, repo, path, branch = self._get_repo_info()
-        if not owner or not repo:
-            return None
-        raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}/{template_name}/manifest.json'
-        try:
-            req = urllib.request.Request(raw_url, headers={
-                'User-Agent': f'APD/{self.version}'
-            })
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                return json.loads(resp.read().decode())
-        except Exception:
-            return None
-
-    def _download_template_file_from_repo(self, file_path: str, template_name: str) -> Optional[bytes]:
-        """Download a single file from the remote template directory."""
-        owner, repo, path, branch = self._get_repo_info()
-        if not owner or not repo:
-            return None
-        raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}/{template_name}/{file_path}'
-        try:
-            req = urllib.request.Request(raw_url, headers={
-                'User-Agent': f'APD/{self.version}'
-            })
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                return resp.read()
-        except Exception as e:
-            self.log_activity('debug', f'Failed to download {file_path}: {e}')
-            return None
-
-    def _fetch_remote_template_file_list(self, template_name: str) -> List[Dict[str, str]]:
-        """Fetch the file tree for a specific template from the remote repo."""
-        owner, repo, path, branch = self._get_repo_info()
-        if not owner or not repo:
-            return []
-        api_url = f'https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1'
-        try:
-            req = urllib.request.Request(api_url, headers={
-                'User-Agent': f'APD/{self.version}',
-                'Accept': 'application/vnd.github.v3+json'
-            })
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                tree_data = json.loads(resp.read().decode())
-            prefix = f'{path}/{template_name}/'
-            files = []
-            for entry in tree_data.get('tree', []):
-                if entry['path'].startswith(prefix) and entry['type'] == 'blob':
-                    rel_path = entry['path'][len(prefix):]
-                    files.append({
-                        'path': rel_path,
-                        'mode': entry.get('mode', '100644'),
-                    })
-            return files
-        except Exception as e:
-            self.log_activity('debug', f'Failed to fetch template file list: {e}')
-            return []
-
-    def _get_repo_info(self) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-        """Get template repository connection info from config."""
-        enabled = self.config.get('TEMPLATE_REPO', 'enabled', fallback='true')
-        if enabled.lower() != 'true':
-            return None, None, None, None
-        owner = self.config.get('TEMPLATE_REPO', 'owner', fallback='IntellsGamer')
-        repo = self.config.get('TEMPLATE_REPO', 'repo', fallback='ilia-cli')
-        path = self.config.get('TEMPLATE_REPO', 'path', fallback='templates')
-        branch = self.config.get('TEMPLATE_REPO', 'branch', fallback='main')
-        return owner, repo, path, branch
-
-    def _fetch_remote_template_list(self) -> List[Dict[str, Any]]:
-        """Fetch list of available templates from the remote repository."""
-        if not self.check_internet():
-            return []
-        owner, repo, path, branch = self._get_repo_info()
-        if not owner or not repo:
-            return []
-        api_url = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
-        try:
-            req = urllib.request.Request(api_url, headers={
-                'User-Agent': f'APD/{self.version}',
-                'Accept': 'application/vnd.github.v3+json'
-            })
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
-            templates = []
-            for item in data:
-                if item.get('type') == 'dir':
-                    templates.append({
-                        'name': item['name'],
-                        'path': item['path'],
-                        'api_url': item['url'],
-                        'source': 'remote',
-                    })
-            return templates
         except Exception as e:
             self.log_activity('debug', f'Failed to fetch remote templates: {e}')
             return []
