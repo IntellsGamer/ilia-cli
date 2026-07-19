@@ -3889,15 +3889,7 @@ Thumbs.db
         script_dir = script_path.parent
         script_name = script_path.name
 
-        # Create backup
-        backup_path = script_dir / f"{script_name}.bak"
-        try:
-            shutil.copy2(script_path, backup_path)
-            print(f"📋 Backup created: {backup_path}")
-        except Exception as e:
-            print(f"⚠️  Could not create backup: {e}")
-
-        # Write to a new file with a version suffix
+        # Write to a new file
         new_script = script_dir / f"{script_name}.new"
         try:
             with open(new_script, 'wb') as f:
@@ -3907,61 +3899,98 @@ Thumbs.db
             print(f"❌ Failed to write new file: {e}")
             return
 
-        # On Windows, we need a different strategy since the file is locked
+        # Spawn a detached process to replace the file and restart
+        print("\n🔄 Spawning updater process...")
+        
         if platform.system() == 'Windows':
-            print("\n" + "=" * 60)
-            print(self._style("⚠️  Windows File Lock Detected", color="33", bold=True))
-            print("=" * 60)
-            print(f"\nThe file '{script_name}' is currently in use by Python.")
-            print("\n📋 To complete the update, please:")
-            print(f"   1. Type 'exit' and press Enter to close this terminal")
-            print(f"   2. Open a new terminal")
-            print(f"   3. Run: copy \"{new_script}\" \"{script_path}\"")
-            print(f"   4. Then run: apd update to verify")
-            print("\n💡 Or use the helper batch file below:")
-
-            # Create a helper batch file
-            helper_bat = script_dir / "update_apd.bat"
-            with open(helper_bat, 'w') as f:
-                f.write(f"""@echo off
+            # Create a temporary batch file that:
+            # 1. Waits 2 seconds for this process to exit
+            # 2. Replaces the file
+            # 3. Restarts APD
+            bat_content = f'''@echo off
 echo Updating APD...
 timeout /t 2 /nobreak > nul
-copy /Y "{new_script}" "{script_path}"
-echo Update complete! Run 'apd update' to verify.
+copy /Y "{new_script}" "{script_path}" > nul
+if errorlevel 1 (
+    echo ❌ Update failed! Restoring backup...
+    copy /Y "{script_dir}\\{script_name}.bak" "{script_path}" > nul
+    echo Backup restored.
+) else (
+    echo ✅ Update successful!
+    del "{new_script}" 2>nul
+)
+echo.
+echo Starting APD...
+python "{script_path}" update --verify
 pause
-""")
-            print(f"   Run: {helper_bat}")
+'''
+            bat_path = script_dir / "update_apd_temp.bat"
+            with open(bat_path, 'w') as f:
+                f.write(bat_content)
+            
+            # Launch the batch file in a new window and exit
+            subprocess.Popen(
+                f'start /min cmd /c "{bat_path}"',
+                shell=True,
+                creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS
+            )
+            
             print("\n" + "=" * 60)
-            self.log_activity('info', f'Update downloaded to {new_script}, manual replacement needed')
-            return
-
-        # Unix: try to replace directly
-        try:
-            # Make the file writable first
-            os.chmod(script_path, 0o777)
-            os.rename(new_script, script_path)
-            print(f"✅ Updated: {script_path}")
-        except Exception as e:
-            print(f"❌ Failed to replace file: {e}")
-            if backup_path.exists():
+            print(self._style("✅ Update is running in the background!", color="32", bold=True))
+            print("The updater will:")
+            print("  1. Wait 2 seconds for this process to exit")
+            print("  2. Replace the file")
+            print("  3. Restart APD with the new version")
+            print("=" * 60)
+            print("\n📋 This terminal will now close. A new window will open shortly.")
+            
+            # Schedule cleanup of the batch file after 10 seconds
+            import threading
+            def cleanup():
+                time.sleep(10)
                 try:
-                    shutil.copy2(backup_path, script_path)
-                    print("🔄 Restored from backup.")
-                except Exception:
-                    print("⚠️  Could not restore backup.")
-            return
-
-        # Clean up
-        if backup_path.exists():
-            try:
-                os.remove(backup_path)
-            except Exception:
-                pass
-
-        print("\n✅ Update completed successfully!")
-        print("Please restart APD to use the new version.")
-
-        self.log_activity('info', f'Updated APD to latest version')
+                    if bat_path.exists():
+                        bat_path.unlink()
+                except:
+                    pass
+            threading.Thread(target=cleanup, daemon=True).start()
+            
+            # Exit this process so the file can be replaced
+            print("\n👋 Exiting APD...")
+            sys.exit(0)
+            
+        else:
+            # Unix: use a shell script
+            sh_content = f'''#!/bin/sh
+sleep 2
+cp "{new_script}" "{script_path}"
+if [ $? -eq 0 ]; then
+    echo "✅ Update successful!"
+    rm -f "{new_script}"
+else
+    echo "❌ Update failed!"
+    cp "{script_dir}/{script_name}.bak" "{script_path}"
+fi
+echo "Starting APD..."
+python "{script_path}" update --verify
+'''
+            sh_path = script_dir / "update_apd_temp.sh"
+            with open(sh_path, 'w') as f:
+                f.write(sh_content)
+            os.chmod(sh_path, 0o755)
+            
+            subprocess.Popen(
+                ['nohup', str(sh_path), '&'],
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            
+            print("\n" + "=" * 60)
+            print(self._style("✅ Update is running in the background!", color="32", bold=True))
+            print("=" * 60)
+            print("\n👋 Exiting APD...")
+            sys.exit(0)
     
     def show_logs(self, tail: bool = False):
         """Show or tail logs"""
@@ -7955,6 +7984,9 @@ trim_trailing_whitespace = false
             # Check if we need to perform the update or just check
             if '--force' in args or '-f' in args:
                 self.perform_update()
+            elif '--verify' in args:
+                # Just check and show status
+                self.check_for_updates(silent=False)
             else:
                 # First check if update is available
                 available = self.check_for_updates(silent=False)
