@@ -1441,7 +1441,7 @@ class ILIACLI:
             color="32" if telemetry_enabled else "31",
         ))
 
-        auto_update_enabled = self._ask_yes_no("Enable automatic update checks [does not work]", default=True)
+        auto_update_enabled = self._ask_yes_no("Enable automatic update checks", default=True)
         self.config['DEFAULT']['auto_update'] = 'true' if auto_update_enabled else 'false'
         print(self._style(
             "Auto-update enabled" if auto_update_enabled else "Auto-update disabled",
