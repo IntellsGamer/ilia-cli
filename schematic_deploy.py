@@ -3885,67 +3885,73 @@ Thumbs.db
             print(f"❌ Downloaded file has syntax errors: {e}")
             return
 
+        # Get the directory where the script is located
+        script_dir = script_path.parent
+        script_name = script_path.name
+
         # Create backup
-        backup_path = script_path.with_suffix('.py.bak')
+        backup_path = script_dir / f"{script_name}.bak"
         try:
             shutil.copy2(script_path, backup_path)
             print(f"📋 Backup created: {backup_path}")
         except Exception as e:
             print(f"⚠️  Could not create backup: {e}")
 
-        # Write to a temporary file first
-        temp_path = script_path.with_suffix('.py.tmp')
+        # Write to a new file with a version suffix
+        new_script = script_dir / f"{script_name}.new"
         try:
-            with open(temp_path, 'wb') as f:
+            with open(new_script, 'wb') as f:
                 f.write(content)
-            print("✅ Downloaded to temporary file.")
+            print(f"✅ Downloaded to: {new_script}")
         except Exception as e:
-            print(f"❌ Failed to write temporary file: {e}")
+            print(f"❌ Failed to write new file: {e}")
             return
 
-        # Replace the original file with the temporary file
+        # On Windows, we need a different strategy since the file is locked
+        if platform.system() == 'Windows':
+            print("\n" + "=" * 60)
+            print(self._style("⚠️  Windows File Lock Detected", color="33", bold=True))
+            print("=" * 60)
+            print(f"\nThe file '{script_name}' is currently in use by Python.")
+            print("\n📋 To complete the update, please:")
+            print(f"   1. Type 'exit' and press Enter to close this terminal")
+            print(f"   2. Open a new terminal")
+            print(f"   3. Run: copy \"{new_script}\" \"{script_path}\"")
+            print(f"   4. Then run: apd update to verify")
+            print("\n💡 Or use the helper batch file below:")
+
+            # Create a helper batch file
+            helper_bat = script_dir / "update_apd.bat"
+            with open(helper_bat, 'w') as f:
+                f.write(f"""@echo off
+echo Updating APD...
+timeout /t 2 /nobreak > nul
+copy /Y "{new_script}" "{script_path}"
+echo Update complete! Run 'apd update' to verify.
+pause
+""")
+            print(f"   Run: {helper_bat}")
+            print("\n" + "=" * 60)
+            self.log_activity('info', f'Update downloaded to {new_script}, manual replacement needed')
+            return
+
+        # Unix: try to replace directly
         try:
-            # On Windows, we can't replace a file that's in use
-            # Use a different strategy: write to a new file and inform the user
-            if platform.system() == 'Windows':
-                # Try to rename the temp file to the original
-                try:
-                    os.remove(script_path)
-                    os.rename(temp_path, script_path)
-                    print(f"✅ Updated: {script_path}")
-                except PermissionError:
-                    # File is in use - use a different approach
-                    print("⚠️  File is in use. Using alternative update strategy...")
-                    # Write to a new file with a different name
-                    new_script = script_path.parent / 'schematic_deploy_new.py'
-                    shutil.copy2(temp_path, new_script)
-                    print(f"✅ Downloaded to: {new_script}")
-                    print("\n📋 To complete the update:")
-                    print(f"   1. Exit APD")
-                    print(f"   2. Rename {new_script} to {script_path.name}")
-                    print(f"   3. Restart APD")
-                    return
-            else:
-                # Unix: atomic rename
-                os.rename(temp_path, script_path)
-                print(f"✅ Updated: {script_path}")
+            # Make the file writable first
+            os.chmod(script_path, 0o777)
+            os.rename(new_script, script_path)
+            print(f"✅ Updated: {script_path}")
         except Exception as e:
             print(f"❌ Failed to replace file: {e}")
-            # Restore backup if possible
             if backup_path.exists():
                 try:
                     shutil.copy2(backup_path, script_path)
                     print("🔄 Restored from backup.")
                 except Exception:
-                    print("⚠️  Could not restore backup. Manual intervention may be needed.")
+                    print("⚠️  Could not restore backup.")
             return
 
         # Clean up
-        if temp_path.exists():
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
         if backup_path.exists():
             try:
                 os.remove(backup_path)
