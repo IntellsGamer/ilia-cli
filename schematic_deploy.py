@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.2.1
+Version: 3.2.2
 """
-__version__ = "3.2.1"
+__version__ = "3.2.2"
 import threading
 import urllib.request
 import urllib.error
@@ -3720,34 +3720,45 @@ Thumbs.db
         print(self._style("Run 'apd doctor' for detailed diagnostics.", color="90"))
     
     def _get_remote_version(self) -> Optional[str]:
-        """Get the version string from the remote schematic_deploy.py."""
+        """Get the latest version tag from the repository's commits."""
         owner, repo, path, branch = self._get_repo_info()
         if not owner or not repo:
             return None
 
-        raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/schematic_deploy.py'
         token = self.config.get('TEMPLATE_REPO', 'token', fallback=None)
-        headers = {'User-Agent': f'APD/{self.version}'}
+        headers = {
+            'User-Agent': f'APD/{self.version}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
         if token:
             headers['Authorization'] = f'token {token}'
 
+        # Get the latest commits to find version tags like "v1.2.3" or "v.1.2.3"
+        api_url = f'https://api.github.com/repos/{owner}/{repo}/commits?sha={branch}&per_page=30'
+        
         try:
-            req = urllib.request.Request(raw_url, headers=headers)
+            req = urllib.request.Request(api_url, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as resp:
-                content = resp.read().decode('utf-8')
-                # Extract version from the file using regex
-                import re
-                match = re.search(r'^Version:\s*([\d.]+)', content, re.MULTILINE)
+                commits = json.loads(resp.read().decode())
+                
+            import re
+            # Pattern for version tags: v1.2.3, v.1.2.3, version 1.2.3, release 1.2.3
+            version_pattern = re.compile(r'(?i)(?:v|version|release)\s*[.:]?\s*(\d+\.\d+\.\d+)')
+            
+            for commit in commits:
+                message = commit.get('commit', {}).get('message', '')
+                # Check commit message for version tag
+                match = version_pattern.search(message)
                 if match:
-                    return match.group(1)
-                # Fallback: look for __version__ = "X.X.X"
-                match = re.search(r'__version__\s*=\s*["\']([\d.]+)["\']', content)
-                if match:
-                    return match.group(1)
-                # If no version found, use the first 8 chars of SHA as a fallback
-                return hashlib.sha256(content.encode()).hexdigest()[:8]
+                    version = match.group(1)  # e.g., "3.2.1"
+                    # Verify that the commit actually changed schematic_deploy.py
+                    # (optional but good for safety)
+                    return version
+            
+            # No version tag found in recent commits
+            return None
         except Exception as e:
-            self.log_activity('debug', f'Failed to fetch remote version: {e}')
+            self.log_activity('debug', f'Failed to fetch remote version from commits: {e}')
             return None
 
     def _get_local_version(self) -> Optional[str]:
@@ -3759,17 +3770,24 @@ Thumbs.db
             with open(script_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 import re
-                # Look for Version: X.X.X in the docstring
+                # Pattern 1: Version: X.X.X in docstring
                 match = re.search(r'^Version:\s*([\d.]+)', content, re.MULTILINE)
                 if match:
                     return match.group(1)
-                # Look for __version__ = "X.X.X"
+                # Pattern 2: __version__ = "X.X.X"
                 match = re.search(r'__version__\s*=\s*["\']([\d.]+)["\']', content)
                 if match:
                     return match.group(1)
-                # Fallback: use file's SHA
-                with open(script_path, 'rb') as fb:
-                    return hashlib.sha256(fb.read()).hexdigest()[:8]
+                # Pattern 3: VERSION = "X.X.X"
+                match = re.search(r'VERSION\s*=\s*["\']([\d.]+)["\']', content)
+                if match:
+                    return match.group(1)
+                # Pattern 4: version = "X.X.X"
+                match = re.search(r'version\s*=\s*["\']([\d.]+)["\']', content)
+                if match:
+                    return match.group(1)
+                # Fallback: use "unknown" (don't use SHA for local version)
+                return "unknown"
         except Exception:
             return None
 
