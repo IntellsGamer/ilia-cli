@@ -189,6 +189,7 @@ class ILIACLI:
         self.config = self.load_config()
         self.session_id = self.generate_session_id()
         self._gui_app = None
+        self._aliases = self._load_aliases()
 
     def _configure_console(self):
         """Make terminal output consistent across platforms."""
@@ -382,6 +383,44 @@ class ILIACLI:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in {'1', 'true', 'yes', 'y', 'on', 'enabled'}
+
+    def run(self, args):
+        """Main CLI entry point."""
+        if self.config['DEFAULT'].getboolean('first_run', True):
+            self.first_run_setup()
+
+        self.send_telemetry(
+            "app_started",
+            command=args[0] if args else None,
+            args_count=len(args)
+        )
+
+        if len(args) == 0 or args[0] in ['-h', '--help', 'help']:
+            if len(args) > 1 and args[1] in ['templates', 'template']:
+                self.show_template_help(args[2] if len(args) > 2 else None)
+            else:
+                self.show_help()
+            return
+
+        # Resolve aliases
+        original_command = args[0]
+        resolved_command = self._resolve_alias(original_command)
+        if resolved_command != original_command:
+            # Split resolved command into args
+            resolved_parts = resolved_command.split()
+            args = resolved_parts + args[1:]
+            self.log_activity('debug', f'Alias resolved: {original_command} -> {resolved_command}')
+            print(f"🔗 Alias: {original_command} -> {resolved_command}")
+        else:
+            # Also try to resolve the full command string for multi-word aliases
+            full_command = ' '.join(args)
+            resolved_full = self._resolve_alias(full_command)
+            if resolved_full != full_command:
+                args = resolved_full.split()
+                self.log_activity('debug', f'Alias resolved: {full_command} -> {resolved_full}')
+                print(f"🔗 Alias: {full_command} -> {resolved_full}")
+
+        command = args[0]
 
     def _coerce_config_value(self, value: str) -> str:
         """Normalize values before storing them in config.ini."""
@@ -1133,6 +1172,102 @@ class ILIACLI:
             config['TELEMETRY'] = {
                 'url': 'https://example.com/tm/submit'
             }
+            config['TEMPLATE_REPO'] = {
+                'enabled': 'true',
+                'owner': 'IntellsGamer',
+                'repo': 'ilia-cli',
+                'path': 'templates',
+                'branch': 'main'
+            }
+            config['ALIASES'] = {
+                # Default aliases - Core commands
+                'c': 'new',
+                'create': 'new',
+                'n': 'new',
+                
+                # Project management
+                'ls': 'projects',
+                'list': 'projects',
+                'p': 'projects',
+                'rm': 'delete',
+                'remove': 'delete',
+                'del': 'delete',
+                
+                # Templates
+                't': 'templates',
+                'tmpl': 'templates',
+                'template': 'templates',
+                'cp': 'templates clone',
+                'clone': 'templates clone',
+                'import': 'templates import',
+                'install': 'templates install',
+                'export': 'templates export',
+                'preview': 'templates preview',
+                'info': 'templates info',
+                'validate': 'templates validate',
+                'score': 'templates score',
+                
+                # System
+                'doc': 'doctor',
+                'fix': 'doctor --fix',
+                'st': 'status',
+                'status': 'status',
+                'up': 'update',
+                'update': 'update',
+                'log': 'logs',
+                'logs': 'logs',
+                'clean': 'cleanup',
+                'cleanup': 'cleanup',
+                'un': 'uninstall',
+                'uninstall': 'uninstall',
+                
+                # Config
+                'cfg': 'config',
+                'settings': 'config',
+                'conf': 'config',
+                
+                # Project analysis
+                'audit': 'audit-all',
+                'audit-all': 'audit-all',
+                'sbom': 'sbom',
+                'graph': 'graph',
+                'metrics': 'metrics',
+                'plan': 'plan',
+                'release': 'release',
+                'snap': 'snapshot',
+                'snapshot': 'snapshot',
+                'restore': 'restore',
+                'blueprint': 'blueprint',
+                
+                # Dev tools
+                'env': 'env',
+                'docker': 'dockerize',
+                'dockerize': 'dockerize',
+                'ci': 'ci',
+                'test': 'test',
+                'run': 'run',
+                'onboard': 'onboard',
+                'harden': 'harden',
+                
+                # Shortcuts for common operations
+                'open': 'open',
+                'o': 'open',
+                'i': 'inspect',
+                'inspect': 'inspect',
+                'deps': 'deps',
+                'scripts': 'scripts',
+                'ports': 'ports',
+                'env-check': 'env-check',
+                'lock': 'lock',
+                'verify': 'verify',
+                'clean-project': 'clean-project',
+                'scaffold-tests': 'scaffold-tests',
+                'compare': 'compare',
+                'rename': 'rename',
+                'mv': 'rename',
+                'archive': 'archive',
+                'zip': 'archive'
+            }
             
         return config
     
@@ -1524,6 +1659,8 @@ class ILIACLI:
             ("Templates", [
                 ("templates", "List available templates"),
                 ("templates list", "List templates with details"),
+                ("templates search <term>", "Search templates locally and on remote repo"),
+                ("templates install <name>", "Download and install template from remote repo"),
                 ("templates create <name>", "Create template from current directory"),
                 ("templates info <name>", "Show manifest details"),
                 ("templates validate <name>", "Validate template structure"),
@@ -3486,6 +3623,7 @@ Thumbs.db
         self._print_section("Quick Commands")
         print("  apd config      View configuration")
         print("  apd templates   List templates")
+        print("  apd alias list  List all aliases")
         print("  apd --setup     Run setup wizard")
         
         self.log_activity('info', 'System diagnostics completed')
@@ -3520,10 +3658,12 @@ Thumbs.db
         mirror = "✅ Enabled" if self.config['MIRROR'].getboolean('enabled') else "❌ Disabled"
         auto_update = "✅ Yes" if self.config['DEFAULT'].getboolean('auto_update') else "❌ No"
         telemetry = "✅ Yes" if self.config['DEFAULT'].getboolean('telemetry') else "❌ No"
+        alias_count = len(self._aliases)
         self._render_pairs([
             ("PyPI Mirror", mirror),
             ("Auto-Update", auto_update),
             ("Telemetry", telemetry),
+            ("Aliases", f"{alias_count} configured"),
         ])
         
         # Statistics
@@ -3836,6 +3976,12 @@ Thumbs.db
                 ("doctor", "Run system diagnostics"),
                 ("update", "Check for updates"),
             ]),
+            ("Aliases", [
+                ("alias list", "List all configured aliases"),
+                ("alias add <alias> <command>", "Add a new alias"),
+                ("alias remove <alias>", "Remove an alias"),
+                ("alias help", "Show alias management help"),
+            ]),
             ("Projects", [
                 ("projects", "List created projects"),
                 ("projects refresh", "Recalculate project metadata"),
@@ -3880,7 +4026,8 @@ Thumbs.db
                 ("templates", "List available templates"),
                 ("templates list", "List templates with details"),
                 ("templates preview <name>", "Preview template structure"),
-                ("templates search <term>", "Search templates"),
+                ("templates search <term>", "Search templates locally and on remote repo"),
+                ("templates install <name>", "Download and install template from remote repo"),
                 ("templates create <name>", "Create template from current directory"),
                 ("templates info <name>", "Show manifest details"),
                 ("templates validate <name>", "Validate template structure"),
@@ -3927,6 +4074,8 @@ Thumbs.db
             "apd templates preview flask",
             "apd archive myapp",
             "apd config set PROJECT.auto_git true",
+            "apd alias add c new        # Create alias 'c' for 'new'",
+            "apd c myapp --flask        # Use alias to create project",
         ]:
             print(f"  {self._style(example, color='32')}")
 
@@ -4352,6 +4501,7 @@ Thumbs.db
         print("\nCommands:")
         print("  apd templates preview <name>")
         print("  apd templates search <term>")
+        print("  apd templates install <name>")
         print("  apd templates clone <src> <dst>")
         print("  apd templates export <name>")
 
@@ -4480,10 +4630,206 @@ Thumbs.db
 
         self._print_template_tree(template_dir)
 
+    def _get_repo_info(self) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+        """Get template repository connection info from config."""
+        enabled = self.config.get('TEMPLATE_REPO', 'enabled', fallback='true')
+        if enabled.lower() != 'true':
+            return None, None, None, None
+        owner = self.config.get('TEMPLATE_REPO', 'owner', fallback='IntellsGamer')
+        repo = self.config.get('TEMPLATE_REPO', 'repo', fallback='ilia-cli')
+        path = self.config.get('TEMPLATE_REPO', 'path', fallback='templates')
+        branch = self.config.get('TEMPLATE_REPO', 'branch', fallback='main')
+        return owner, repo, path, branch
+
+    def _fetch_remote_template_list(self) -> List[Dict[str, Any]]:
+        """Fetch list of available templates from the remote repository."""
+        if not self.check_internet():
+            return []
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return []
+        api_url = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
+        try:
+            req = urllib.request.Request(api_url, headers={
+                'User-Agent': f'APD/{self.version}',
+                'Accept': 'application/vnd.github.v3+json'
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            templates = []
+            for item in data:
+                if item.get('type') == 'dir':
+                    templates.append({
+                        'name': item['name'],
+                        'path': item['path'],
+                        'api_url': item['url'],
+                        'source': 'remote',
+                    })
+            return templates
+        except Exception as e:
+            self.log_activity('debug', f'Failed to fetch remote templates: {e}')
+            return []
+
+    def _fetch_remote_template_manifest(self, template_name: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single template's manifest.json from the remote repo."""
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return None
+        raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}/{template_name}/manifest.json'
+        try:
+            req = urllib.request.Request(raw_url, headers={
+                'User-Agent': f'APD/{self.version}'
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode())
+        except Exception:
+            return None
+
+    def _download_template_file_from_repo(self, file_path: str, template_name: str) -> Optional[bytes]:
+        """Download a single file from the remote template directory."""
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return None
+        raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}/{template_name}/{file_path}'
+        try:
+            req = urllib.request.Request(raw_url, headers={
+                'User-Agent': f'APD/{self.version}'
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return resp.read()
+        except Exception as e:
+            self.log_activity('debug', f'Failed to download {file_path}: {e}')
+            return None
+
+    def _fetch_remote_template_file_list(self, template_name: str) -> List[Dict[str, str]]:
+        """Fetch the file tree for a specific template from the remote repo."""
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return []
+        api_url = f'https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1'
+        try:
+            req = urllib.request.Request(api_url, headers={
+                'User-Agent': f'APD/{self.version}',
+                'Accept': 'application/vnd.github.v3+json'
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                tree_data = json.loads(resp.read().decode())
+            prefix = f'{path}/{template_name}/'
+            files = []
+            for entry in tree_data.get('tree', []):
+                if entry['path'].startswith(prefix) and entry['type'] == 'blob':
+                    rel_path = entry['path'][len(prefix):]
+                    files.append({
+                        'path': rel_path,
+                        'mode': entry.get('mode', '100644'),
+                    })
+            return files
+        except Exception as e:
+            self.log_activity('debug', f'Failed to fetch template file list: {e}')
+            return []
+
+    def _get_repo_info(self) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+        """Get template repository connection info from config."""
+        enabled = self.config.get('TEMPLATE_REPO', 'enabled', fallback='true')
+        if enabled.lower() != 'true':
+            return None, None, None, None
+        owner = self.config.get('TEMPLATE_REPO', 'owner', fallback='IntellsGamer')
+        repo = self.config.get('TEMPLATE_REPO', 'repo', fallback='ilia-cli')
+        path = self.config.get('TEMPLATE_REPO', 'path', fallback='templates')
+        branch = self.config.get('TEMPLATE_REPO', 'branch', fallback='main')
+        return owner, repo, path, branch
+
+    def _fetch_remote_template_list(self) -> List[Dict[str, Any]]:
+        """Fetch list of available templates from the remote repository."""
+        if not self.check_internet():
+            return []
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return []
+        api_url = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
+        try:
+            req = urllib.request.Request(api_url, headers={
+                'User-Agent': f'APD/{self.version}',
+                'Accept': 'application/vnd.github.v3+json'
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            templates = []
+            for item in data:
+                if item.get('type') == 'dir':
+                    templates.append({
+                        'name': item['name'],
+                        'path': item['path'],
+                        'api_url': item['url'],
+                        'source': 'remote',
+                    })
+            return templates
+        except Exception as e:
+            self.log_activity('debug', f'Failed to fetch remote templates: {e}')
+            return []
+
+    def _fetch_remote_template_manifest(self, template_name: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single template's manifest.json from the remote repo."""
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return None
+        raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}/{template_name}/manifest.json'
+        try:
+            req = urllib.request.Request(raw_url, headers={
+                'User-Agent': f'APD/{self.version}'
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode())
+        except Exception:
+            return None
+
+    def _download_template_file_from_repo(self, file_path: str, template_name: str) -> Optional[bytes]:
+        """Download a single file from the remote template directory."""
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return None
+        raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}/{template_name}/{file_path}'
+        try:
+            req = urllib.request.Request(raw_url, headers={
+                'User-Agent': f'APD/{self.version}'
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return resp.read()
+        except Exception as e:
+            self.log_activity('debug', f'Failed to download {file_path}: {e}')
+            return None
+
+    def _fetch_remote_template_file_list(self, template_name: str) -> List[Dict[str, str]]:
+        """Fetch the file tree for a specific template from the remote repo."""
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return []
+        api_url = f'https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1'
+        try:
+            req = urllib.request.Request(api_url, headers={
+                'User-Agent': f'APD/{self.version}',
+                'Accept': 'application/vnd.github.v3+json'
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                tree_data = json.loads(resp.read().decode())
+            prefix = f'{path}/{template_name}/'
+            files = []
+            for entry in tree_data.get('tree', []):
+                if entry['path'].startswith(prefix) and entry['type'] == 'blob':
+                    rel_path = entry['path'][len(prefix):]
+                    files.append({
+                        'path': rel_path,
+                        'mode': entry.get('mode', '100644'),
+                    })
+            return files
+        except Exception as e:
+            self.log_activity('debug', f'Failed to fetch template file list: {e}')
+            return []
+
     def search_templates(self, query: str):
-        """Search templates by name, framework, description, or variables."""
+        """Search templates locally and remotely (if internet available)."""
         needle = query.strip().lower()
-        matches = []
+        local_matches = []
         for template_name in self.list_available_templates():
             manifest = self.get_template_manifest(template_name)
             haystacks = [template_name.lower(), self.detect_template_type(self.templates_dir / template_name).lower()]
@@ -4494,23 +4840,185 @@ Thumbs.db
                     ' '.join(var.get('name', '') for var in manifest.data.get('variables', [])).lower(),
                 ])
             if any(needle in field for field in haystacks):
-                matches.append(template_name)
+                local_matches.append(template_name)
+
+        remote_matches = []
+        online = self.check_internet()
+        if online:
+            remote_templates = self._fetch_remote_template_list()
+            for rt in remote_templates:
+                name = rt['name'].lower()
+                manifest = self._fetch_remote_template_manifest(rt['name'])
+                haystacks = [name]
+                if manifest:
+                    haystacks.extend([
+                        str(manifest.get('framework', '')).lower(),
+                        str(manifest.get('description', '')).lower(),
+                        ' '.join(var.get('name', '') for var in manifest.get('variables', [])).lower(),
+                    ])
+                if any(needle in field for field in haystacks):
+                    remote_matches.append(rt)
 
         self._print_title(f"Template Search: {query}")
-        if not matches:
+        if not local_matches and not remote_matches:
             print("No matching templates found.")
+            if not online:
+                print(" (offline mode - remote templates not searched)")
             return
 
-        rows = []
-        for template_name in matches:
-            manifest = self.get_template_manifest(template_name)
-            rows.append([
-                template_name,
-                manifest.data.get('framework', 'custom') if manifest else 'custom',
-                str(len(manifest.data.get('variables', []))) if manifest else '0',
-                manifest.data.get('description', '') if manifest else '',
-            ])
-        self._render_table(["Template", "Framework", "Vars", "Description"], rows)
+        if local_matches:
+            print(self._style("\nLocal Templates:", bold=True))
+            rows = []
+            for template_name in local_matches:
+                manifest = self.get_template_manifest(template_name)
+                rows.append([
+                    template_name,
+                    manifest.data.get('framework', 'custom') if manifest else 'custom',
+                    str(len(manifest.data.get('variables', []))) if manifest else '0',
+                    manifest.data.get('description', '') if manifest else '',
+                    'local',
+                ])
+            self._render_table(["Template", "Framework", "Vars", "Description", "Source"], rows)
+
+        if remote_matches:
+            print(self._style("\nRemote Templates:", bold=True))
+            rows = []
+            for rt in remote_matches:
+                manifest = self._fetch_remote_template_manifest(rt['name'])
+                rows.append([
+                    rt['name'],
+                    manifest.get('framework', 'custom') if manifest else 'custom',
+                    str(len(manifest.get('variables', []))) if manifest else '0',
+                    manifest.get('description', '') if manifest else '',
+                    'remote (install with: apd templates install ' + rt['name'] + ')',
+                ])
+            self._render_table(["Template", "Framework", "Vars", "Description", "Source"], rows)
+
+    def install_template_from_repo(self, template_name: str):
+        """Download and install a template from the remote repository."""
+        template_name = template_name.strip()
+        if not template_name:
+            print("❌ Template name required")
+            return
+        dst = self.templates_dir / template_name
+        if dst.exists():
+            print(f"⚠️  Template '{template_name}' already exists locally.")
+            overwrite = input("Overwrite? (y/N): ").strip().lower()
+            if overwrite not in ('y', 'yes'):
+                print("Operation cancelled.")
+                return
+            shutil.rmtree(dst)
+
+        print(f"Looking up '{template_name}' in remote repository...")
+        remote_list = self._fetch_remote_template_list()
+        found = None
+        for rt in remote_list:
+            if rt['name'].lower() == template_name.lower():
+                found = rt
+                break
+        if not found:
+            print(f"❌ Template '{template_name}' not found in remote repository.")
+            print("Use 'apd templates search' to see available templates.")
+            return
+
+        print(f"Fetching file list for '{template_name}'...")
+        files = self._fetch_remote_template_file_list(template_name)
+        if not files:
+            print(f"❌ Could not fetch template files from repository.")
+            return
+
+        dst.mkdir(parents=True, exist_ok=True)
+        total = len(files)
+        for i, file_info in enumerate(files, 1):
+            rel_path = file_info['path']
+            target_file = dst / rel_path
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            print(f"  [{i}/{total}] Downloading {rel_path}...")
+            content = self._download_template_file_from_repo(rel_path, template_name)
+            if content is not None:
+                target_file.write_bytes(content)
+            else:
+                print(f"  ⚠️  Failed to download {rel_path}")
+
+        file_count = len(list(dst.rglob('*')))
+        print(f"\n✅ Template '{template_name}' installed successfully!")
+        print(f"   Files: {file_count}")
+        manifest_file = dst / 'manifest.json'
+        if manifest_file.exists():
+            try:
+                with open(manifest_file, 'r', encoding='utf-8') as f:
+                    manifest_data = json.load(f)
+                print(f"   Framework: {manifest_data.get('framework', 'custom')}")
+                print(f"   Description: {manifest_data.get('description', 'No description')}")
+            except Exception:
+                pass
+        else:
+            self._create_basic_manifest(dst, template_name)
+        print(f"\n💡 Usage: apd new myproject --template {template_name}")
+        self.log_activity('info', f'Template installed from repo: {template_name}')
+
+    def install_template_from_repo(self, template_name: str):
+        """Download and install a template from the remote repository."""
+        template_name = template_name.strip()
+        if not template_name:
+            print("❌ Template name required")
+            return
+        dst = self.templates_dir / template_name
+        if dst.exists():
+            print(f"⚠️  Template '{template_name}' already exists locally.")
+            overwrite = input("Overwrite? (y/N): ").strip().lower()
+            if overwrite not in ('y', 'yes'):
+                print("Operation cancelled.")
+                return
+            shutil.rmtree(dst)
+
+        print(f"Looking up '{template_name}' in remote repository...")
+        remote_list = self._fetch_remote_template_list()
+        found = None
+        for rt in remote_list:
+            if rt['name'].lower() == template_name.lower():
+                found = rt
+                break
+        if not found:
+            print(f"❌ Template '{template_name}' not found in remote repository.")
+            print("Use 'apd templates search' to see available templates.")
+            return
+
+        print(f"Fetching file list for '{template_name}'...")
+        files = self._fetch_remote_template_file_list(template_name)
+        if not files:
+            print(f"❌ Could not fetch template files from repository.")
+            return
+
+        dst.mkdir(parents=True, exist_ok=True)
+        total = len(files)
+        for i, file_info in enumerate(files, 1):
+            rel_path = file_info['path']
+            target_file = dst / rel_path
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            print(f"  [{i}/{total}] Downloading {rel_path}...")
+            content = self._download_template_file_from_repo(rel_path, template_name)
+            if content is not None:
+                target_file.write_bytes(content)
+            else:
+                print(f"  ⚠️  Failed to download {rel_path}")
+
+        file_count = len(list(dst.rglob('*')))
+        print(f"\n✅ Template '{template_name}' installed successfully!")
+        print(f"   Files: {file_count}")
+        manifest_file = dst / 'manifest.json'
+        if manifest_file.exists():
+            try:
+                with open(manifest_file, 'r', encoding='utf-8') as f:
+                    manifest_data = json.load(f)
+                print(f"   Framework: {manifest_data.get('framework', 'custom')}")
+                print(f"   Description: {manifest_data.get('description', 'No description')}")
+            except Exception:
+                pass
+        else:
+            self._create_basic_manifest(dst, template_name)
+        print(f"\n💡 Usage: apd new myproject --template {template_name}")
+        self.log_activity('info', f'Template installed from repo: {template_name}')
 
     def clone_template(self, source_name: str, target_name: str):
         """Clone an installed template under a new name."""
@@ -4888,6 +5396,135 @@ Thumbs.db
         self.save_config()
         print(f"Updated {dotted_key} = {self._get_config_value(dotted_key)}")
         self.log_activity('info', f'Config updated: {dotted_key}')
+
+    def _load_aliases(self) -> Dict[str, str]:
+        """Load aliases from config."""
+        aliases = {}
+        if 'ALIASES' in self.config:
+            for key, value in self.config['ALIASES'].items():
+                aliases[key] = value
+        return aliases
+
+    def _save_aliases(self):
+        """Save aliases to config."""
+        if 'ALIASES' not in self.config:
+            self.config['ALIASES'] = {}
+        
+        # Clear existing aliases
+        self.config['ALIASES'].clear()
+        
+        # Add all aliases
+        for key, value in self._aliases.items():
+            self.config['ALIASES'][key] = value
+        
+        self.save_config()
+
+    def _resolve_alias(self, command: str) -> str:
+        """Resolve an alias to its full command."""
+        if not command:
+            return command
+        
+        # Check if the entire command is an alias
+        if command in self._aliases:
+            resolved = self._aliases[command]
+            # Recursively resolve nested aliases (avoid infinite loops)
+            if resolved in self._aliases and resolved != command:
+                return self._resolve_alias(resolved)
+            return resolved
+        
+        # Check if the command starts with an alias (e.g., "c myproject" -> "new myproject")
+        parts = command.split()
+        if parts and parts[0] in self._aliases:
+            alias_target = self._aliases[parts[0]]
+            # Recursively resolve the alias target (avoid infinite loops)
+            if alias_target in self._aliases and alias_target != parts[0]:
+                alias_target = self._resolve_alias(alias_target)
+            # Replace the first word with the alias target
+            return f"{alias_target} {' '.join(parts[1:])}".strip()
+        
+        return command
+
+    def add_alias(self, alias: str, command: str, force: bool = False):
+        """Add a new alias."""
+        alias = alias.strip()
+        command = command.strip()
+        
+        if not alias or not command:
+            print("❌ Alias and command are required")
+            return False
+        
+        # Prevent infinite alias loops
+        if alias == command:
+            print("❌ Alias cannot be the same as its command")
+            return False
+        
+        # Check if alias already exists
+        if alias in self._aliases and not force:
+            print(f"⚠️  Alias '{alias}' already exists: {self._aliases[alias]}")
+            overwrite = input("Overwrite? (y/N): ").strip().lower()
+            if overwrite != 'y':
+                return False
+        
+        self._aliases[alias] = command
+        self._save_aliases()
+        print(f"✅ Alias added: {alias} -> {command}")
+        self.log_activity('info', f'Alias added: {alias} -> {command}')
+        return True
+
+    def remove_alias(self, alias: str):
+        """Remove an alias."""
+        alias = alias.strip()
+        if not alias:
+            print("❌ Alias name required")
+            return False
+        
+        if alias not in self._aliases:
+            print(f"❌ Alias '{alias}' not found")
+            return False
+        
+        removed_command = self._aliases[alias]
+        del self._aliases[alias]
+        self._save_aliases()
+        print(f"✅ Alias removed: {alias} (was -> {removed_command})")
+        self.log_activity('info', f'Alias removed: {alias}')
+        return True
+
+    def list_aliases(self):
+        """List all aliases."""
+        if not self._aliases:
+            print("No aliases configured")
+            return
+        
+        self._print_title("Aliases")
+        rows = []
+        for alias, command in sorted(self._aliases.items()):
+            rows.append([alias, command])
+        self._render_table(["Alias", "Command"], rows)
+        
+        print(f"\n💡 Total: {len(self._aliases)} alias(es)")
+        print("  apd alias add <alias> <command>  - Add a new alias")
+        print("  apd alias remove <alias>         - Remove an alias")
+
+    def show_alias_help(self):
+        """Show alias management help."""
+        print("\n📋 Alias Management")
+        print("=" * 60)
+        print("\nCommands:")
+        print("  apd alias list                    - List all aliases")
+        print("  apd alias add <alias> <command>   - Add a new alias")
+        print("  apd alias remove <alias>          - Remove an alias")
+        print("  apd alias help                    - Show this help")
+        print("\nExamples:")
+        print("  apd alias add c new               - 'c myproject' runs 'new myproject'")
+        print("  apd alias add st status           - 'st' runs 'status'")
+        print("  apd alias add g config            - 'g editor' runs 'config editor'")
+        print("  apd alias add ls projects         - 'ls' runs 'projects'")
+        print("  apd alias add rm delete           - 'rm' runs 'delete'")
+        print("\n💡 Aliases can also be used as command prefixes:")
+        print("  apd c myapp --flask               - Creates a new Flask project")
+        print("  apd st                            - Shows system status")
+        print("  apd ls                            - Lists all projects")
+        print("\n⚠️  Avoid circular alias references (alias a -> b, alias b -> a)")
 
     def _resolve_project_target(self, target: str) -> Tuple[Optional[Path], str, Optional[Dict[str, Any]]]:
         """Resolve a registered project name or filesystem path."""
@@ -6486,6 +7123,24 @@ trim_trailing_whitespace = false
                 self.show_help()
             return
 
+        # Resolve aliases BEFORE checking the command
+        original_command = args[0]
+        resolved_command = self._resolve_alias(original_command)
+        if resolved_command != original_command:
+            # Split resolved command into args
+            resolved_parts = resolved_command.split()
+            args = resolved_parts + args[1:]
+            self.log_activity('debug', f'Alias resolved: {original_command} -> {resolved_command}')
+            print(f"🔗 Alias: {original_command} -> {resolved_command}")
+        else:
+            # Also try to resolve the full command string for multi-word aliases
+            full_command = ' '.join(args)
+            resolved_full = self._resolve_alias(full_command)
+            if resolved_full != full_command:
+                args = resolved_full.split()
+                self.log_activity('debug', f'Alias resolved: {full_command} -> {resolved_full}')
+                print(f"🔗 Alias: {full_command} -> {resolved_full}")
+
         command = args[0]
         
         if command in ['gui', '--gui']:
@@ -6503,6 +7158,21 @@ trim_trailing_whitespace = false
         if command in ['--about', 'about']:
             self.show_about()
             return
+
+        # Handle help for aliases
+        if command in ['-h', '--help', 'help'] and len(args) > 1:
+            # Check if the target is an alias (after resolving)
+            target = args[1]
+            if target in self._aliases:
+                print(f"\n📋 Alias: {target} -> {self._aliases[target]}")
+                print("Resolves to: apd " + self._resolve_alias(target))
+                return
+            # Check if any part of the command is an alias
+            for i, arg in enumerate(args):
+                if arg in self._aliases:
+                    print(f"\n📋 Alias: {arg} -> {self._aliases[arg]}")
+                    print("Resolves to: apd " + self._resolve_alias(arg))
+                    return
 
         if command in ['init', 'new']:
             try:
@@ -6625,6 +7295,11 @@ trim_trailing_whitespace = false
                     print("Error: Usage: apd templates search <term>")
                     return
                 self.search_templates(' '.join(args[2:]))
+            elif subcommand == 'install':
+                if len(args) < 3:
+                    print("Error: Usage: apd templates install <name>")
+                    return
+                self.install_template_from_repo(args[2])
             elif subcommand == 'clone':
                 if len(args) < 4:
                     print("Error: Usage: apd templates clone <source> <target>")
@@ -6919,6 +7594,33 @@ trim_trailing_whitespace = false
                 self.doctor_fix()
             else:
                 self.run_doctor()
+            return
+
+        if command == 'alias':
+            if len(args) == 1:
+                self.list_aliases()
+                return
+            
+            subcommand = args[1]
+            if subcommand == 'list':
+                self.list_aliases()
+            elif subcommand == 'add':
+                if len(args) < 4:
+                    print("❌ Usage: apd alias add <alias> <command>")
+                    print("Example: apd alias add c new")
+                    return
+                self.add_alias(args[2], ' '.join(args[3:]))
+            elif subcommand == 'remove':
+                if len(args) < 3:
+                    print("❌ Usage: apd alias remove <alias>")
+                    print("Example: apd alias remove c")
+                    return
+                self.remove_alias(args[2])
+            elif subcommand == 'help':
+                self.show_alias_help()
+            else:
+                print(f"❌ Unknown alias subcommand: {subcommand}")
+                print("Available: list, add, remove, help")
             return
 
         if command == 'status':
@@ -7800,6 +8502,14 @@ class EmbeddedAPDGUI:
             # Custom command action (may include 'apd' prefix)
             cmd = action.replace("cmd_", "")
             self._execute_custom_command(cmd)
+        elif action.startswith("alias_"):
+            # Execute an alias
+            alias = action.replace("alias_", "")
+            if alias in self.cli._aliases:
+                resolved = self.cli._aliases[alias]
+                self._execute_custom_command(f"apd {resolved}")
+            else:
+                self._log(f"❌ Alias not found: {alias}", "error")
     
     def _execute_custom_command(self, command):
         """Execute a custom shell command."""
