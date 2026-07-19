@@ -1648,10 +1648,10 @@ class ILIACLI:
 
         sections = [
             ("Core", [
-                ("new <name> [--flask|--html]", "Create a new project"),
-                ("init [--flask|--html]", "Start interactive project creation"),
+                ("new <name> [--template <name>]", "Create a new project"),
+                ("init [name] [--flask|--html]", "Interactive project creation"),
                 ("doctor", "Run system diagnostics"),
-                ("update", "Check for updates"),
+                ("update [--force|-f]", "Check for updates (--force to install)"),
             ]),
             ("Projects", [
                 ("projects", "List created projects"),
@@ -3718,31 +3718,244 @@ Thumbs.db
         print()
         print(self._style("Run 'apd doctor' for detailed diagnostics.", color="90"))
     
-    def check_for_updates(self):
-        """Check for apd updates"""
-        self._print_title("Update Check")
-        
-        if not self.check_internet():
-            self._panel("Update Result", ["No internet connection"], tone="error")
-            return
-        
+    def _get_remote_file_info(self) -> Tuple[Optional[str], Optional[str], Optional[int]]:
+        """Get remote file SHA, timestamp, and content from the repo."""
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return None, None, None
+
+        # Get file info from GitHub API
+        api_url = f'https://api.github.com/repos/{owner}/{repo}/contents/schematic_deploy.py'
+        token = self.config.get('TEMPLATE_REPO', 'token', fallback=None)
+        headers = {
+            'User-Agent': f'APD/{self.version}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        if token:
+            headers['Authorization'] = f'token {token}'
+
         try:
-            # This would check a real API in production
-            self._panel(
-                "Update Result",
-                [
-                    "You have the latest version installed.",
-                    f"Current version: {self.version}",
-                ],
-                tone="ok",
-            )
-            
+            req = urllib.request.Request(api_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                sha = data.get('sha', '')
+                # Get commit timestamp from the file's last commit
+                commit_url = data.get('_links', {}).get('html', '').replace('/blob/', '/commits/')
+                if commit_url:
+                    # Try to get commit info
+                    try:
+                        req2 = urllib.request.Request(commit_url, headers=headers)
+                        with urllib.request.urlopen(req2, timeout=10) as resp2:
+                            commit_data = json.loads(resp2.read().decode())
+                            if commit_data and isinstance(commit_data, list) and commit_data:
+                                timestamp_str = commit_data[0].get('commit', {}).get('committer', {}).get('date', '')
+                                if timestamp_str:
+                                    timestamp = int(datetime.fromisoformat(timestamp_str.replace('Z', '+00:00')).timestamp())
+                                    return sha, None, timestamp
+                    except Exception:
+                        pass
+                # Fallback: use file's SHA as version identifier
+                return sha, None, None
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print("⚠️  Remote schematic_deploy.py not found in repository.")
+            else:
+                self.log_activity('debug', f'Failed to fetch remote file info: {e}')
+            return None, None, None
+        except Exception as e:
+            self.log_activity('debug', f'Failed to fetch remote file info: {e}')
+            return None, None, None
+
+    def _get_local_file_sha(self) -> Optional[str]:
+        """Calculate SHA of the local schematic_deploy.py file."""
+        try:
+            # Get the path of the currently running script
+            script_path = Path(sys.argv[0]).resolve()
+            if not script_path.exists():
+                return None
+            with open(script_path, 'rb') as f:
+                return hashlib.sha256(f.read()).hexdigest()
+        except Exception:
+            return None
+
+    def _get_script_path(self) -> Path:
+        """Get the path of the currently running script."""
+        return Path(sys.argv[0]).resolve()
+
+    def _download_remote_file(self) -> Optional[bytes]:
+        """Download the latest schematic_deploy.py from the repo."""
+        owner, repo, path, branch = self._get_repo_info()
+        if not owner or not repo:
+            return None
+
+        raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/schematic_deploy.py'
+        token = self.config.get('TEMPLATE_REPO', 'token', fallback=None)
+        headers = {'User-Agent': f'APD/{self.version}'}
+        if token:
+            headers['Authorization'] = f'token {token}'
+
+        try:
+            req = urllib.request.Request(raw_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return resp.read()
+        except Exception as e:
+            self.log_activity('debug', f'Failed to download remote file: {e}')
+            return None
+
+    def check_for_updates(self, silent: bool = False):
+        """Check for apd updates"""
+        if not silent:
+            self._print_title("Update Check")
+
+        if not self.check_internet():
+            if not silent:
+                self._panel("Update Result", ["No internet connection"], tone="error")
+            return
+
+        try:
+            remote_sha, _, remote_timestamp = self._get_remote_file_info()
+            if not remote_sha:
+                if not silent:
+                    print("❌ Could not fetch remote version information.")
+                return
+
+            local_sha = self._get_local_file_sha()
+            if not local_sha:
+                if not silent:
+                    print("❌ Could not read local file.")
+                return
+
             # Update last check timestamp
             self.config['DEFAULT']['last_update_check'] = str(int(time.time()))
             self.save_config()
-            
+
+            if remote_sha != local_sha:
+                if not silent:
+                    self._panel(
+                        "Update Available!",
+                        [
+                            f"Current version: {self.version}",
+                            "A newer version is available.",
+                            "Run 'apd update' to download and install it.",
+                        ],
+                        tone="warn",
+                    )
+                return True
+            else:
+                if not silent:
+                    self._panel(
+                        "Update Result",
+                        [
+                            "You have the latest version installed.",
+                            f"Current version: {self.version}",
+                        ],
+                        tone="ok",
+                    )
+                return False
+
         except Exception as e:
-            print(f"❌ Update check failed: {e}")
+            if not silent:
+                print(f"❌ Update check failed: {e}")
+            return False
+
+    def perform_update(self):
+        """Actually download and install the update."""
+        self._print_title("Updating APD")
+
+        if not self.check_internet():
+            self._panel("Update Failed", ["No internet connection"], tone="error")
+            return
+
+        print("📥 Downloading latest version...")
+        content = self._download_remote_file()
+        if not content:
+            print("❌ Failed to download update.")
+            return
+
+        script_path = self._get_script_path()
+        if not script_path.exists():
+            print(f"❌ Script not found at: {script_path}")
+            return
+
+        # Verify the downloaded file is valid Python
+        try:
+            compile(content, '<string>', 'exec')
+            print("✅ Downloaded file is valid Python.")
+        except SyntaxError as e:
+            print(f"❌ Downloaded file has syntax errors: {e}")
+            return
+
+        # Create backup
+        backup_path = script_path.with_suffix('.py.bak')
+        try:
+            shutil.copy2(script_path, backup_path)
+            print(f"📋 Backup created: {backup_path}")
+        except Exception as e:
+            print(f"⚠️  Could not create backup: {e}")
+
+        # Write to a temporary file first
+        temp_path = script_path.with_suffix('.py.tmp')
+        try:
+            with open(temp_path, 'wb') as f:
+                f.write(content)
+            print("✅ Downloaded to temporary file.")
+        except Exception as e:
+            print(f"❌ Failed to write temporary file: {e}")
+            return
+
+        # Replace the original file with the temporary file
+        try:
+            # On Windows, we can't replace a file that's in use
+            # Use a different strategy: write to a new file and inform the user
+            if platform.system() == 'Windows':
+                # Try to rename the temp file to the original
+                try:
+                    os.remove(script_path)
+                    os.rename(temp_path, script_path)
+                    print(f"✅ Updated: {script_path}")
+                except PermissionError:
+                    # File is in use - use a different approach
+                    print("⚠️  File is in use. Using alternative update strategy...")
+                    # Write to a new file with a different name
+                    new_script = script_path.parent / 'schematic_deploy_new.py'
+                    shutil.copy2(temp_path, new_script)
+                    print(f"✅ Downloaded to: {new_script}")
+                    print("\n📋 To complete the update:")
+                    print(f"   1. Exit APD")
+                    print(f"   2. Rename {new_script} to {script_path.name}")
+                    print(f"   3. Restart APD")
+                    return
+            else:
+                # Unix: atomic rename
+                os.rename(temp_path, script_path)
+                print(f"✅ Updated: {script_path}")
+        except Exception as e:
+            print(f"❌ Failed to replace file: {e}")
+            # Restore backup if possible
+            if backup_path.exists():
+                try:
+                    shutil.copy2(backup_path, script_path)
+                    print("🔄 Restored from backup.")
+                except Exception:
+                    print("⚠️  Could not restore backup. Manual intervention may be needed.")
+            return
+
+        # Clean up
+        if temp_path.exists():
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        if backup_path.exists():
+            try:
+                os.remove(backup_path)
+            except Exception:
+                pass
+
+        print("\n✅ Update completed successfully!")
+        print("Please restart APD to use the new version.")
+
+        self.log_activity('info', f'Updated APD to latest version')
     
     def show_logs(self, tail: bool = False):
         """Show or tail logs"""
@@ -3978,7 +4191,7 @@ Thumbs.db
                 ("new <name> [--template <name>]", "Create a new project"),
                 ("init [name] [--flask|--html]", "Interactive project creation"),
                 ("doctor", "Run system diagnostics"),
-                ("update", "Check for updates"),
+                ("update [--force|-f]", "Check for updates (--force to install)"),
             ]),
             ("Aliases", [
                 ("alias list", "List all configured aliases"),
@@ -7192,6 +7405,19 @@ trim_trailing_whitespace = false
         if self.config['DEFAULT'].getboolean('first_run', True):
             self.first_run_setup()
 
+        # Check for updates on boot (silently)
+        last_check = int(self.config['DEFAULT'].get('last_update_check', '0'))
+        if time.time() - last_check > 86400:  # Check once per day
+            try:
+                update_available = self.check_for_updates(silent=True)
+                if update_available:
+                    print("\n" + "=" * 60)
+                    print(self._style("🔄 Update Available!", color="33", bold=True))
+                    print("Run 'apd update' to download and install the latest version.")
+                    print("=" * 60 + "\n")
+            except Exception:
+                pass  # Silent failure for boot check
+
         self.send_telemetry(
             "app_started",
             command=args[0] if args else None,
@@ -7720,7 +7946,19 @@ trim_trailing_whitespace = false
             return
 
         if command == 'update':
-            self.check_for_updates()
+            # Check if we need to perform the update or just check
+            if '--force' in args or '-f' in args:
+                self.perform_update()
+            else:
+                # First check if update is available
+                available = self.check_for_updates(silent=False)
+                if available:
+                    print("\n" + "=" * 60)
+                    print(self._style("🔄 Update Available!", color="33", bold=True))
+                    print("Run 'apd update --force' to download and install it.")
+                    print("=" * 60)
+                elif available is False:
+                    print("\n✅ You already have the latest version.")
             return
 
         if command == 'logs':
