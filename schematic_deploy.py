@@ -4786,20 +4786,54 @@ python "{script_path}" update --verify
         if token:
             headers['Authorization'] = f'token {token}'
 
+        # Step 1: Get the list of template directories
         api_url = f'https://api.github.com/repos/{owner}/{repo}/contents/{path}'
         try:
             req = urllib.request.Request(api_url, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
-            templates = []
+            
+            template_names = []
             for item in data:
                 if item.get('type') == 'dir':
-                    templates.append({
-                        'name': item['name'],
-                        'path': item['path'],
-                        'api_url': item['url'],
-                        'source': 'remote',
-                    })
+                    template_names.append(item['name'])
+            
+            if not template_names:
+                return []
+            
+            # Step 2: Get the entire repo tree in ONE API call to get sizes
+            tree_url = f'https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1'
+            req2 = urllib.request.Request(tree_url, headers=headers)
+            with urllib.request.urlopen(req2, timeout=15) as resp2:
+                tree_data = json.loads(resp2.read().decode())
+            
+            # Calculate total size per template directory
+            template_sizes = {}
+            prefix = f'{path}/'
+            for entry in tree_data.get('tree', []):
+                entry_path = entry.get('path', '')
+                if entry_path.startswith(prefix):
+                    # Extract template name: templates/<name>/...
+                    parts = entry_path.split('/')
+                    if len(parts) >= 3:  # templates/name/file
+                        template_name = parts[1]
+                        if template_name in template_names:
+                            if entry.get('type') == 'blob':
+                                # Add file size to template total
+                                size = entry.get('size', 0)
+                                template_sizes[template_name] = template_sizes.get(template_name, 0) + size
+            
+            # Build the final template list with sizes
+            templates = []
+            for name in template_names:
+                templates.append({
+                    'name': name,
+                    'path': f'{path}/{name}',
+                    'source': 'remote',
+                    'size': template_sizes.get(name, 0),
+                    'file_count': 0,  # We don't count files, just size
+                })
+            
             # Cache the result
             if templates:
                 self._save_remote_templates_cache(templates)
@@ -4847,13 +4881,13 @@ python "{script_path}" update --verify
             if remote_templates:
                 for rt in remote_templates:
                     # Don't fetch manifest for each template during list (too slow)
-                    # Just show basic info
+                    # Just show basic info with size from the tree API
                     rt['type'] = 'Unknown'
                     rt['framework'] = 'Unknown'
                     rt['variables'] = '?'
                     rt['source'] = 'remote'
                     rt['files'] = '?'
-                    rt['size'] = '?'
+                    rt['size'] = rt.get('size', 0)
                     rt['modified'] = '?'
                     templates.append(rt)
             else:
