@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.3.0
+Version: 3.2.0
 """
-__version__ = "3.3.0"
+__version__ = "3.2.0"
 import threading
 import urllib.request
 import urllib.error
@@ -178,7 +178,7 @@ class ILIACLI:
     
     def __init__(self):
         self.app_name = "APD"
-        self.version = "3.0.0"
+        self.version = __version__
         self._configure_console()
         self.config_dir = self.get_config_dir()
         self.config_file = self.config_dir / "config.ini"
@@ -10326,9 +10326,9 @@ def create_wrapper_scripts():
     """Create wrapper scripts for apd command"""
     
     # Windows batch file
-    batch_content = """@echo off
+    batch_content = f"""@echo off
 :: apd.bat - Wrapper for APD
-:: Version: 3.0.0
+:: Version: {__version__}
 
 setlocal enabledelayedexpansion
 
@@ -10351,8 +10351,8 @@ exit /b %errorlevel%
 """
     
     # PowerShell script
-    ps_content = """# apd.ps1 - PowerShell wrapper for APD
-# Version: 3.0.0
+    ps_content = f"""# apd.ps1 - PowerShell wrapper for APD
+# Version: {__version__}
 
 param([string[]]$Arguments)
 
@@ -10361,30 +10361,30 @@ $pythonScript = Join-Path $scriptDir "apd.py"
 
 # Check if Python is available
 $python = Get-Command python -ErrorAction SilentlyContinue
-if (-not $python) {
+if (-not $python) {{
     $python = Get-Command python3 -ErrorAction SilentlyContinue
-}
+}}
 
-if (-not $python) {
+if (-not $python) {{
     Write-Host "❌ Python not found. Please install Python 3.7 or higher." -ForegroundColor Red
     exit 1
-}
+}}
 
-if (Test-Path $pythonScript) {
+if (Test-Path $pythonScript) {{
     & $python.Source $pythonScript $Arguments
     exit $LASTEXITCODE
-} else {
+}} else {{
     Write-Host "❌ Error: Could not find apd.py" -ForegroundColor Red
     exit 1
-}
+}}
 """
     
     # Bash script for Unix-like systems
-    bash_content = """#!/bin/bash
+    bash_content = f"""#!/bin/bash
 # apd.sh - Bash wrapper for APD
-# Version: 3.0.0
+# Version: {__version__}
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
 PYTHON_SCRIPT="$SCRIPT_DIR/apd.py"
 
 # Check if Python is available
@@ -10411,9 +10411,9 @@ exit $?
 """
     
     # Create install script
-    install_content = """#!/bin/bash
+    install_content = f"""#!/bin/bash
 # install.sh - Install APD wrapper
-# Version: 3.0.0
+# Version: {__version__}
 
 echo "🔧 Installing APD wrapper..."
 
