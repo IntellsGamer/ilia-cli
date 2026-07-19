@@ -3916,11 +3916,11 @@ echo Updating APD...
 timeout /t 2 /nobreak > nul
 copy /Y "{new_script}" "{script_path}" > nul
 if errorlevel 1 (
-    echo ❌ Update failed! Restoring backup...
+    echo [FAIL] Update failed! Restoring backup...
     copy /Y "{script_dir}\\{script_name}.bak" "{script_path}" > nul
     echo Backup restored.
 ) else (
-    echo ✅ Update successful!
+    echo [OK] Update successful!
     del "{new_script}" 2>nul
 )
 echo.
@@ -3929,7 +3929,7 @@ python "{script_path}" update --verify
 pause
 '''
             bat_path = script_dir / "update_apd_temp.bat"
-            with open(bat_path, 'w') as f:
+            with open(bat_path, 'w', encoding='utf-8') as f:
                 f.write(bat_content)
             
             # Launch the batch file in a new window and exit
@@ -3940,16 +3940,15 @@ pause
             )
             
             print("\n" + "=" * 60)
-            print(self._style("✅ Update is running in the background!", color="32", bold=True))
+            print(self._style("[OK] Update is running in the background!", color="32", bold=True))
             print("The updater will:")
             print("  1. Wait 2 seconds for this process to exit")
             print("  2. Replace the file")
             print("  3. Restart APD with the new version")
             print("=" * 60)
-            print("\n📋 This terminal will now close. A new window will open shortly.")
+            print("\n[*] This terminal will now close. A new window will open shortly.")
             
             # Schedule cleanup of the batch file after 10 seconds
-            import threading
             def cleanup():
                 time.sleep(10)
                 try:
@@ -3993,7 +3992,7 @@ python "{script_path}" update --verify
             print("\n" + "=" * 60)
             print(self._style("✅ Update is running in the background!", color="32", bold=True))
             print("=" * 60)
-            print("\n👋 Exiting APD...")
+            print("\n[*] Exiting APD...")
             sys.exit(0)
     
     def show_logs(self, tail: bool = False):
