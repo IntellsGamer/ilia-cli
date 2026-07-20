@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.2.2
+Version: 3.2.4
 """
-__version__ = "3.2.2"
+__version__ = "3.2.4"
 import threading
 import urllib.request
 import urllib.error
@@ -1242,6 +1242,16 @@ class ILIACLI:
                 'snap': 'snapshot',
                 'snapshot': 'snapshot',
                 'restore': 'restore',
+                'history': 'history',
+                'his': 'history',
+                'revert': 'revert',
+                'rev': 'revert',
+                'scan': 'scan',
+                'security': 'scan',
+                'graph-viz': 'graph-viz',
+                'graphviz': 'graph-viz',
+                'gv': 'graph-viz',
+                'migrate': 'migrate',
                 'blueprint': 'blueprint',
                 
                 # Dev tools
@@ -4296,8 +4306,13 @@ python "{script_path}" update --verify
                 ("open <name>", "Open project in default editor"),
                 ("info <name>", "Show project details"),
                 ("archive <name>", "Archive project to ZIP"),
-                ("snapshot <name|path> [label]", "Create restorable project snapshot"),
-                ("restore <zip> [dest]", "Restore an APD snapshot safely"),
+                ("snapshot <name|path> [label]", "Create restorable project snapshot (git or ZIP)"),
+                ("restore <zip> [dest]", "Restore an APD ZIP snapshot safely"),
+                ("history <name|path> [--limit N]", "Show APD snapshot history (git projects)"),
+                ("revert <name|path> <ref> [--force]", "Revert to a snapshot with diff preview"),
+                ("scan <name|path> [--json]", "Security scan: secrets, deps CVEs, config issues"),
+                ("graph-viz <name|path>", "Interactive dependency graph (tkinter window)"),
+                ("migrate <name|path> <template> [--force]", "Migrate project to a different template"),
                 ("blueprint <name|path>", "Export reproducible project blueprint"),
                 ("env <name|path>", "Generate .env.example from code references"),
                 ("dockerize <name|path>", "Generate Dockerfile and .dockerignore"),
@@ -6511,6 +6526,754 @@ jobs:
 
         print(f"Snapshot restored to: {target_dir}")
 
+    # ── Git-powered time travel ────────────────────────────────────────
+
+    def _is_git_project(self, project_dir: Path) -> bool:
+        """Check if a project directory has a .git folder."""
+        return (project_dir / '.git').is_dir()
+
+    def _git_run(self, project_dir: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+        """Run a git command inside *project_dir* and return the result."""
+        cmd = ['git'] + list(args)
+        return subprocess.run(
+            cmd, cwd=project_dir,
+            capture_output=True, text=True, check=check,
+        )
+
+    def _git_snapshot_exists(self, project_dir: Path, ref: str) -> bool:
+        """Return True if *ref* is a valid git revision in the project."""
+        result = self._git_run(project_dir, 'rev-parse', '--verify', ref, check=False)
+        return result.returncode == 0
+
+    def git_snapshot_project(self, target: str, label: Optional[str] = None):
+        """Create a tagged git commit acting as an APD snapshot."""
+        project_path, project_name, _ = self._resolve_project_target(target)
+        if not project_path or not project_path.exists():
+            print(f"Project not found: {target}")
+            return
+
+        if not self._is_git_project(project_path):
+            print(f"Project '{project_name}' is not a git repository.")
+            print("Use 'apd new <name> --git' to enable git, or run 'git init' first.")
+            print("Falling back to ZIP snapshot...")
+            self.snapshot_project(target, label=label)
+            return
+
+        safe_label = (label or datetime.now().strftime('%Y%m%d-%H%M%S')).strip()
+        tag_name = f"apd/snapshot/{safe_label}"
+        commit_msg = f"apd: snapshot '{safe_label}'"
+
+        # Stage all changes (including untracked files)
+        self._git_run(project_path, 'add', '-A', check=False)
+
+        # Check if there is anything to commit
+        status = self._git_run(project_path, 'status', '--porcelain', check=False)
+        if not status.stdout.strip():
+            print("No changes to snapshot — working tree is clean.")
+            return
+
+        # Commit
+        result = self._git_run(project_path, 'commit', '-m', commit_msg, check=False)
+        if result.returncode != 0:
+            print(f"Failed to create snapshot commit:\n{result.stderr.strip()}")
+            return
+
+        # Get the short hash of the new commit
+        rev = self._git_run(project_path, 'rev-parse', '--short', 'HEAD', check=False).stdout.strip()
+
+        # Tag the commit (force if tag already exists)
+        self._git_run(project_path, 'tag', '-f', tag_name, check=False)
+
+        # Count files changed
+        diff_stat = self._git_run(project_path, 'diff', '--stat', 'HEAD~1', check=False)
+        files_changed = len([l for l in diff_stat.stdout.strip().splitlines() if '|' in l]) if diff_stat.stdout.strip() else 0
+
+        print(f"Snapshot created: {rev}  (tag: {tag_name})")
+        print(f"  Label  : {safe_label}")
+        print(f"  Files  : ~{files_changed} file(s) changed")
+        print(f"  Commit : {commit_msg}")
+
+    def git_history(self, target: str, limit: int = 20):
+        """Show APD snapshot history for a git-enabled project."""
+        project_path, project_name, _ = self._resolve_project_target(target)
+        if not project_path or not project_path.exists():
+            print(f"Project not found: {target}")
+            return
+
+        if not self._is_git_project(project_path):
+            print(f"Project '{project_name}' is not a git repository.")
+            print("Snapshots are only available for git-enabled projects.")
+            return
+
+        # Gather all apd/snapshot/ tags with their commit info
+        result = self._git_run(
+            project_path, 'tag', '-l', 'apd/snapshot/*',
+            '--sort=-creatordate',
+            '--format=%(refname:short)|%(objectname:short)|%(creatordate:iso-local)|%(subject)',
+            check=False,
+        )
+
+        lines = [l for l in result.stdout.strip().splitlines() if l]
+
+        if not lines:
+            print(f"No snapshots found for project '{project_name}'.")
+            print(f"Create one with: apd snapshot {project_name} [label]")
+            return
+
+        print(f"\n  Snapshot history for '{project_name}':")
+        print(f"  {'─' * 60}")
+
+        for line in lines[:limit]:
+            parts = line.split('|', 3)
+            if len(parts) < 4:
+                continue
+            tag, short_hash, date_str, subject = parts
+            label = tag.replace('apd/snapshot/', '')
+
+            # Get stats for this commit
+            stat = self._git_run(
+                project_path, 'diff', '--shortstat', f'{short_hash}~1', short_hash,
+                check=False,
+            )
+            stat_line = stat.stdout.strip().splitlines()[-1] if stat.stdout.strip() else ""
+
+            print(f"  {short_hash}  {label:<20s}  {date_str.strip()[:19]}")
+            if stat_line:
+                print(f"          {stat_line}")
+
+        print(f"  {'─' * 60}")
+        print(f"  Total: {min(len(lines), limit)} snapshot(s)")
+
+    def git_revert(self, target: str, snapshot_ref: str, force: bool = False):
+        """Revert a project to a specific APD snapshot with diff preview.
+
+        *snapshot_ref* can be:
+          - A short git hash  (e.g. ``a1b2c3d``)
+          - A snapshot label  (e.g. ``v1`` — resolved via ``apd/snapshot/v1`` tag)
+        """
+        project_path, project_name, _ = self._resolve_project_target(target)
+        if not project_path or not project_path.exists():
+            print(f"Project not found: {target}")
+            return
+
+        if not self._is_git_project(project_path):
+            print(f"Project '{project_name}' is not a git repository — cannot revert.")
+            return
+
+        # Resolve the ref: try as tag first, then as raw hash
+        tag_name = f"apd/snapshot/{snapshot_ref}"
+        if self._git_snapshot_exists(project_path, tag_name):
+            resolved_ref = tag_name
+        elif self._git_snapshot_exists(project_path, snapshot_ref):
+            resolved_ref = snapshot_ref
+        else:
+            print(f"Snapshot '{snapshot_ref}' not found in project '{project_name}'.")
+            print("Run 'apd history <project>' to list available snapshots.")
+            return
+
+        # Show commit info
+        log = self._git_run(
+            project_path, 'log', '-1', '--format=%H %s (%ci)', resolved_ref,
+            check=False,
+        )
+        print(f"\n  Reverting to snapshot: {resolved_ref}")
+        print(f"  {log.stdout.strip()}")
+
+        # Show diff summary vs current HEAD
+        diff = self._git_run(
+            project_path, 'diff', '--stat', 'HEAD', resolved_ref,
+            check=False,
+        )
+        if diff.stdout.strip():
+            print(f"\n  Changes that will be applied:")
+            print(f"  {'─' * 50}")
+            for dl in diff.stdout.strip().splitlines()[:30]:
+                print(f"    {dl}")
+            remaining = len(diff.stdout.strip().splitlines()) - 30
+            if remaining > 0:
+                print(f"    ... and {remaining} more line(s)")
+        else:
+            print("\n  Working tree already matches this snapshot — nothing to revert.")
+
+        # Confirm
+        if not force:
+            confirm = input("\n  Proceed with revert? (y/N): ").strip().lower()
+            if confirm not in ('y', 'yes'):
+                print("  Revert cancelled.")
+                return
+
+        # Perform the revert using checkout of specific files
+        # This preserves the current branch but restores files to snapshot state
+        result = self._git_run(
+            project_path, 'checkout', resolved_ref, '--', '.',
+            check=False,
+        )
+        if result.returncode != 0:
+            print(f"  Revert failed: {result.stderr.strip()}")
+            return
+
+        # Create a revert commit
+        self._git_run(project_path, 'add', '-A', check=False)
+        self._git_run(
+            project_path, 'commit', '-m',
+            f"apd: reverted to snapshot '{snapshot_ref}' ({resolved_ref})",
+            check=False,
+        )
+
+        new_rev = self._git_run(project_path, 'rev-parse', '--short', 'HEAD', check=False).stdout.strip()
+        print(f"\n  Reverted successfully → {new_rev}")
+        print(f"  A revert commit has been created on your current branch.")
+
+    # ── Security Scanner ────────────────────────────────────────────────
+
+    def _scan_dependency_vulns(self, project_path: Path) -> List[Dict[str, Any]]:
+        """Attempt to check dependencies for known vulnerabilities.
+
+        Tries ``pip-audit`` for Python projects and ``npm audit --json`` for
+        Node.js projects.  Returns a list of vulnerability records.  If the
+        audit tools are not installed, an empty list is returned silently.
+        """
+        vulns: List[Dict[str, Any]] = []
+        stack = self._detect_project_stack(project_path)
+
+        # ── Python (pip-audit) ──
+        if stack['dependency_files'] and any(
+            f in stack['dependency_files'] for f in ('requirements.txt', 'pyproject.toml')
+        ):
+            if shutil.which('pip-audit'):
+                try:
+                    req = project_path / 'requirements.txt'
+                    cmd = ['pip-audit', '--format', 'json']
+                    if req.exists():
+                        cmd += ['-r', str(req)]
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                    if result.returncode == 0 or result.stdout.strip():
+                        data = json.loads(result.stdout)
+                        for item in data:
+                            vulns.append({
+                                'ecosystem': 'pypi',
+                                'name': item.get('name', ''),
+                                'version': item.get('version', ''),
+                                'vuln_id': item.get('id', ''),
+                                'fix_versions': item.get('fix_versions', []),
+                                'description': item.get('description', ''),
+                            })
+                except (json.JSONDecodeError, subprocess.TimeoutExpired, Exception):
+                    pass
+
+        # ── Node (npm audit) ──
+        if 'package.json' in stack.get('dependency_files', []):
+            if shutil.which('npm'):
+                try:
+                    result = subprocess.run(
+                        ['npm', 'audit', '--json'],
+                        cwd=str(project_path),
+                        capture_output=True, text=True, timeout=120,
+                    )
+                    data = json.loads(result.stdout)
+                    advisories = data.get('advisories', {}) or data.get('vulnerabilities', {})
+                    if isinstance(advisories, dict):
+                        for _key, adv in advisories.items():
+                            if isinstance(adv, dict):
+                                vulns.append({
+                                    'ecosystem': 'npm',
+                                    'name': adv.get('module_name', adv.get('name', '')),
+                                    'version': adv.get('vulnerable_versions', ''),
+                                    'vuln_id': adv.get('id', _key),
+                                    'fix_versions': adv.get('patched_versions', ''),
+                                    'description': adv.get('title', adv.get('description', '')),
+                                    'severity': adv.get('severity', 'unknown'),
+                                })
+                except (json.JSONDecodeError, subprocess.TimeoutExpired, Exception):
+                    pass
+
+        return vulns
+
+    def _scan_security_issues(self, project_path: Path) -> List[Dict[str, Any]]:
+        """Deep security scan: secrets, env leaks, dangerous configs, perms."""
+        issues: List[Dict[str, Any]] = []
+
+        def add(severity: str, category: str, message: str, file_path: str = "", line: str = ""):
+            issues.append({
+                'severity': severity,
+                'category': category,
+                'message': message,
+                'file': file_path,
+                'line': line,
+            })
+
+        # ── Existing secret scan (reuses APD's built-in patterns) ──
+        for finding in self._scan_secret_candidates(project_path):
+            add('critical', 'secret', f"Possible hard-coded secret ({finding['type']}) at line {finding['line']}", finding['file'], finding['line'])
+
+        # ── .env files not gitignored ──
+        if self._is_git_project(project_path):
+            gitignore_path = project_path / '.gitignore'
+            gitignore_content = self._read_text_file(gitignore_path) if gitignore_path.exists() else ""
+            for env_file in project_path.glob('.env*'):
+                if env_file.name == '.env.example':
+                    continue
+                if env_file.name not in gitignore_content:
+                    add('high', 'env-leak', f"{env_file.name} is not in .gitignore — may be committed", env_file.name)
+
+        # ── Dangerous file permissions (world-writable) ──
+        if platform.system() != 'Windows':
+            for file_path in self._iter_project_files(project_path):
+                try:
+                    mode = file_path.stat().st_mode
+                    if mode & 0o002:  # world-writable
+                        add('medium', 'permissions', f"World-writable file: {oct(mode)}", self._project_rel(project_path, file_path))
+                except Exception:
+                    pass
+
+        # ── Debug/verbose flags left enabled ──
+        debug_patterns = [
+            (r'(?i)\bDEBUG\s*=\s*True', 'Python DEBUG=True'),
+            (r'(?i)FLASK_DEBUG\s*=\s*1', 'Flask debug mode enabled'),
+            (r'console\.log\(', 'console.log() call found'),
+            (r'(?i)app\.run\(\s*debug\s*=\s*True', 'Flask debug server'),
+        ]
+        for file_path in self._iter_project_files(project_path):
+            if not self._is_probably_text_file(file_path):
+                continue
+            content = self._read_text_file(file_path)
+            for pattern, desc in debug_patterns:
+                for match in re.finditer(pattern, content):
+                    line_no = content.count('\n', 0, match.start()) + 1
+                    add('low', 'debug', f"{desc} — consider disabling for production", self._project_rel(project_path, file_path), str(line_no))
+
+        # ── Insecure HTTP URLs in config ──
+        for file_path in self._iter_project_files(project_path):
+            if not self._is_probably_text_file(file_path):
+                continue
+            content = self._read_text_file(file_path)
+            for match in re.finditer(r'(https?://[^\s\'"]+)', content):
+                url = match.group(1)
+                if url.startswith('http://') and 'localhost' not in url and '127.0.0.1' not in url:
+                    line_no = content.count('\n', 0, match.start()) + 1
+                    add('medium', 'insecure-url', f"Insecure HTTP URL: {url}", self._project_rel(project_path, file_path), str(line_no))
+                    break  # one per file is enough
+
+        return issues
+
+    def scan_project(self, target: str, json_output: bool = False):
+        """Run a comprehensive security scan on a project."""
+        project_path, project_name, _ = self._resolve_project_target(target)
+        if not project_path or not project_path.exists():
+            print(f"Project not found: {target}")
+            return
+
+        print(f"\n  Scanning '{project_name}' for security issues...")
+
+        secret_findings = self._scan_secret_candidates(project_path)
+        security_issues = self._scan_security_issues(project_path)
+        dep_vulns = self._scan_dependency_vulns(project_path)
+
+        # Build report
+        report = {
+            'project': project_name,
+            'path': str(project_path),
+            'scanned_at': datetime.now().isoformat(),
+            'secrets': secret_findings,
+            'security_issues': security_issues,
+            'dependency_vulnerabilities': dep_vulns,
+            'summary': {
+                'secrets_found': len(secret_findings),
+                'security_issues': len(security_issues),
+                'dep_vulns': len(dep_vulns),
+                'critical': sum(1 for i in security_issues if i['severity'] == 'critical'),
+                'high': sum(1 for i in security_issues if i['severity'] == 'high'),
+                'medium': sum(1 for i in security_issues if i['severity'] == 'medium'),
+                'low': sum(1 for i in security_issues if i['severity'] == 'low'),
+            },
+        }
+
+        # Risk score (100 = clean, 0 = terrible)
+        penalty = (report['summary']['critical'] * 30 +
+                   report['summary']['high'] * 15 +
+                   report['summary']['medium'] * 5 +
+                   report['summary']['low'] * 2 +
+                   len(dep_vulns) * 10)
+        report['summary']['risk_score'] = max(0, 100 - penalty)
+
+        if json_output:
+            print(json.dumps(report, indent=2))
+            return
+
+        risk = report['summary']['risk_score']
+        risk_label = 'GOOD' if risk >= 80 else 'FAIR' if risk >= 50 else 'POOR'
+        risk_color = '32' if risk >= 80 else '33' if risk >= 50 else '31'
+
+        self._print_title(f"Security Scan: {project_name}", f"Risk Score: {risk}/100 ({risk_label})")
+
+        if not security_issues and not dep_vulns:
+            print("\n  No security issues found. Project looks clean!")
+            return
+
+        # ── Secrets ──
+        if secret_findings:
+            self._print_section(f"Hard-coded Secrets ({len(secret_findings)})")
+            rows = [[f['type'], f['file'], f['line']] for f in secret_findings[:20]]
+            self._render_table(["Type", "File", "Line"], rows)
+
+        # ── Security issues by category ──
+        by_category: Dict[str, list] = {}
+        for issue in security_issues:
+            by_category.setdefault(issue['category'], []).append(issue)
+
+        for category, items in by_category.items():
+            label = {
+                'secret': 'Secrets & Credentials',
+                'env-leak': 'Environment Leaks',
+                'permissions': 'File Permissions',
+                'debug': 'Debug / Verbose Flags',
+                'insecure-url': 'Insecure URLs',
+            }.get(category, category.title())
+            self._print_section(f"{label} ({len(items)})")
+            rows = [[i['severity'].upper(), i.get('file', ''), i.get('line', ''), i['message']] for i in items[:20]]
+            self._render_table(["Severity", "File", "Line", "Issue"], rows)
+
+        # ── Dependency vulnerabilities ──
+        if dep_vulns:
+            self._print_section(f"Dependency Vulnerabilities ({len(dep_vulns)})")
+            rows = [[v['ecosystem'], v['name'], v['vuln_id'], v.get('severity', '?')] for v in dep_vulns[:20]]
+            self._render_table(["Ecosystem", "Package", "Vuln ID", "Severity"], rows)
+
+        # ── Summary ──
+        self._print_section("Summary")
+        self._render_pairs([
+            ("Critical", str(report['summary']['critical'])),
+            ("High", str(report['summary']['high'])),
+            ("Medium", str(report['summary']['medium'])),
+            ("Low", str(report['summary']['low'])),
+            ("Dep Vulns", str(report['summary']['dep_vulns'])),
+            ("Risk Score", f"{risk}/100 ({risk_label})"),
+        ])
+
+    # ── Interactive Dependency Graph (tkinter) ──────────────────────────
+
+    def interactive_graph(self, target: str):
+        """Open an interactive dependency graph in a tkinter window.
+
+        Nodes are clickable: selecting a node shows its version and source
+        file in a detail pane.
+        """
+        project_path, project_name, _ = self._resolve_project_target(target)
+        if not project_path or not project_path.exists():
+            print(f"Project not found: {target}")
+            return
+
+        deps = self._dependency_records(project_path)
+        if not deps:
+            print(f"No dependencies found in '{project_name}'.")
+            return
+
+        root = tk.Tk()
+        root.title(f"Dependency Graph — {project_name}")
+        root.geometry("900x650")
+        root.configure(bg="#1a1b26")
+
+        # ── Layout ──
+        paned = tk.PanedWindow(root, orient=tk.HORIZONTAL, bg="#1a1b26", sashwidth=4)
+        paned.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        canvas_frame = tk.Frame(paned, bg="#1a1b26")
+        detail_frame = tk.Frame(paned, bg="#24283b", relief=tk.FLAT)
+        paned.add(canvas_frame, stretch="always")
+        paned.add(detail_frame, stretch="never", width=280)
+
+        canvas = tk.Canvas(canvas_frame, bg="#1a1b26", highlightthickness=0)
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        detail_title = tk.Label(detail_frame, text="Select a node", font=("Consolas", 13, "bold"),
+                                bg="#24283b", fg="#7aa2f7", anchor="w", padx=10, pady=8)
+        detail_title.pack(fill=tk.X)
+        detail_body = tk.Label(detail_frame, text="", font=("Consolas", 10),
+                               bg="#24283b", fg="#c0caf5", anchor="nw", justify=tk.LEFT, padx=10, pady=4)
+        detail_body.pack(fill=tk.BOTH, expand=True)
+
+        # ── Layout algorithm (radial) ──
+        center_x, center_y = 340, 300
+        node_positions: Dict[int, Tuple[int, int]] = {}
+        node_radius = 22
+        cx, cy = center_x, center_y
+
+        # Center node (project)
+        node_positions[-1] = (cx, cy)
+        # Radial layout for deps
+        n = len(deps)
+        import math
+        radius = min(240, 80 + n * 18)
+        for idx in range(n):
+            angle = 2 * math.pi * idx / n - math.pi / 2
+            nx = cx + int(radius * math.cos(angle))
+            ny = cy + int(radius * math.sin(angle))
+            node_positions[idx] = (nx, ny)
+
+        # ── Draw edges ──
+        for idx in range(n):
+            x1, y1 = node_positions[-1]
+            x2, y2 = node_positions[idx]
+            canvas.create_line(x1, y1, x2, y2, fill="#3b4261", width=1, dash=(4, 4))
+
+        # ── Draw nodes ──
+        node_ovals: Dict[int, int] = {}
+        node_labels: Dict[int, int] = {}
+        selected_node = [-1]
+
+        def draw_node(idx, x, y, label, is_center=False):
+            fill = "#7aa2f7" if is_center else "#3b4261"
+            outline = "#7aa2f7" if is_center else "#565f89"
+            oid = canvas.create_oval(x - node_radius, y - node_radius, x + node_radius, y + node_radius,
+                                     fill=fill, outline=outline, width=2, tags=f"node_{idx}")
+            node_ovals[idx] = oid
+            max_chars = 12
+            display = label[:max_chars] + ".." if len(label) > max_chars else label
+            lid = canvas.create_text(x, y, text=display, fill="#c0caf5" if is_center else "#a9b1d6",
+                                     font=("Consolas", 8), tags=f"node_{idx}")
+            node_labels[idx] = lid
+            return oid, lid
+
+        draw_node(-1, cx, cy, project_name, is_center=True)
+        for idx, dep in enumerate(deps):
+            label = dep['name']
+            x, y = node_positions[idx]
+            draw_node(idx, x, y, label)
+
+        def on_node_click(idx):
+            selected_node[0] = idx
+            # Highlight selected
+            for i, oid in node_ovals.items():
+                canvas.itemconfig(oid, outline="#ff9e64" if i == idx else ("#7aa2f7" if i == -1 else "#565f89"))
+            if idx == -1:
+                detail_title.config(text=project_name)
+                detail_body.config(text=f"Project root\nDependencies: {len(deps)}")
+            else:
+                dep = deps[idx]
+                detail_title.config(text=dep['name'])
+                detail_body.config(
+                    text=f"Version: {dep.get('version', 'N/A')}\n"
+                         f"Type: {dep['type']}\n"
+                         f"Source: {dep.get('source', 'N/A')}\n"
+                         f"Spec: {dep.get('specifier', 'N/A')}")
+
+        def on_click(event):
+            x, y = event.x, event.y
+            # Check center node
+            px, py = node_positions[-1]
+            if (x - px) ** 2 + (y - py) ** 2 <= node_radius ** 2:
+                on_node_click(-1)
+                return
+            for idx in range(n):
+                nx, ny = node_positions[idx]
+                if (x - nx) ** 2 + (y - ny) ** 2 <= node_radius ** 2:
+                    on_node_click(idx)
+                    return
+
+        canvas.bind("<Button-1>", on_click)
+
+        # ── Legend ──
+        legend = tk.Frame(root, bg="#1a1b26")
+        legend.pack(fill=tk.X, padx=10, pady=(0, 4))
+        tk.Label(legend, text=f"  {project_name}  +  {len(deps)} dependencies",
+                 font=("Consolas", 9), bg="#1a1b26", fg="#565f89").pack(side=tk.LEFT)
+        tk.Label(legend, text="Click a node for details  |  Press Q to close",
+                 font=("Consolas", 9), bg="#1a1b26", fg="#565f89").pack(side=tk.RIGHT)
+
+        root.bind("<q>", lambda e: root.destroy())
+        root.bind("<Q>", lambda e: root.destroy())
+        root.mainloop()
+
+    # ── Migration Wizard ────────────────────────────────────────────────
+
+    def _detect_project_template(self, project_path: Path) -> Optional[str]:
+        """Try to detect which APD template a project was built from."""
+        # Check for .apd-manifest.json or manifest.json left by APD
+        for name in ['.apd-manifest.json', 'manifest.json']:
+            manifest_path = project_path / name
+            if manifest_path.exists():
+                data = self._read_json_file(manifest_path)
+                if 'name' in data:
+                    return data['name']
+
+        # Check projects.json registry
+        projects_file = self.projects_dir / 'projects.json'
+        if projects_file.exists():
+            try:
+                projects = json.load(open(projects_file))
+                for p in projects:
+                    if p.get('path', '') == str(project_path):
+                        return p.get('type')
+            except Exception:
+                pass
+
+        # Heuristic: detect from file structure
+        stack = self._detect_project_stack(project_path)
+        frameworks = stack.get('frameworks', [])
+        if 'Flask' in frameworks:
+            return 'flask'
+        if 'React' in frameworks or 'Next.js' in frameworks:
+            return 'react'
+        if 'Vue' in frameworks:
+            return 'vue'
+        if 'Go' in frameworks:
+            return 'go'
+        if 'Django' in frameworks:
+            return 'django'
+        if stack.get('dependency_files') and 'requirements.txt' in stack['dependency_files']:
+            return 'flask'
+        if 'package.json' in stack.get('dependency_files', []):
+            return 'react'
+        return None
+
+    def _extract_project_variables(self, project_path: Path) -> Dict[str, str]:
+        """Extract likely template variables from the project."""
+        variables: Dict[str, str] = {}
+        # Infer from directory name
+        variables['project_name'] = project_path.name
+        # Try to find author from git
+        if self._is_git_project(project_path):
+            result = self._git_run(project_path, 'config', 'user.name', check=False)
+            if result.returncode == 0 and result.stdout.strip():
+                variables['author'] = result.stdout.strip()
+        # Infer from package.json or requirements
+        pkg = project_path / 'package.json'
+        if pkg.exists():
+            data = self._read_json_file(pkg)
+            if 'description' in data:
+                variables['description'] = data['description']
+        req = project_path / 'requirements.txt'
+        if req.exists() and not variables.get('description'):
+            # Use first line comment or template name
+            pass
+        return variables
+
+    def migrate_project(self, target: str, new_template: str, force: bool = False):
+        """Migrate a project from its current template to a new one.
+
+        Copies the project into a temp directory, applies the new template
+        on top, and updates the project registry.
+        """
+        project_path, project_name, _ = self._resolve_project_target(target)
+        if not project_path or not project_path.exists():
+            print(f"Project not found: {target}")
+            return
+
+        new_template_path = self.templates_dir / new_template
+        if not new_template_path.exists():
+            print(f"Template '{new_template}' not found.")
+            print(f"Available templates: {', '.join(t.name for t in self.templates_dir.iterdir() if t.is_dir())}")
+            return
+
+        current_template = self._detect_project_template(project_path)
+        print(f"\n  Migration Plan:")
+        print(f"  {'─' * 50}")
+        print(f"  Project  : {project_name}")
+        print(f"  From     : {current_template or '(undetected)'}")
+        print(f"  To       : {new_template}")
+        print(f"  Path     : {project_path}")
+
+        if current_template == new_template:
+            print(f"\n  Project already uses template '{new_template}'. Nothing to do.")
+            return
+
+        # Extract variables from the existing project
+        variables = self._extract_project_variables(project_path)
+        if variables:
+            print(f"\n  Detected variables:")
+            for k, v in variables.items():
+                print(f"    {k} = {v}")
+
+        # Confirm
+        if not force:
+            confirm = input("\n  Proceed with migration? (y/N): ").strip().lower()
+            if confirm not in ('y', 'yes'):
+                print("  Migration cancelled.")
+                return
+
+        # Create backup snapshot if git-enabled
+        if self._is_git_project(project_path):
+            print("\n  Creating pre-migration snapshot...")
+            self.git_snapshot_project(target, label=f"pre-migrate-{new_template}")
+
+        # Create temp directory and apply new template
+        tmp_dir = Path(tempfile.mkdtemp(prefix='apd-migrate-'))
+        try:
+            new_project_dir = tmp_dir / project_name
+            print(f"\n  Applying template '{new_template}'...")
+
+            # Copy project files to temp
+            skip_dirs = self._project_skip_dirs()
+            for root, dirs, files in os.walk(project_path):
+                dirs[:] = [d for d in dirs if d not in skip_dirs]
+                for filename in files:
+                    src = Path(root) / filename
+                    dst = new_project_dir / src.relative_to(project_path)
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
+
+            # Apply new template on top (overwrite common files, add new ones)
+            self.process_template_with_manifest(
+                new_template, new_project_dir, project_name,
+                cli_variables=variables, interactive=False,
+            )
+
+            # Copy back: overwrite old project with new content
+            # Remove old project contents (except .git, venv, node_modules)
+            preserve_dirs = {'.git', 'venv', '.venv', 'env', 'node_modules', '__pycache__'}
+            for item in project_path.iterdir():
+                if item.name in preserve_dirs:
+                    continue
+                if item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    item.unlink(missing_ok=True)
+
+            # Copy new content back
+            for root, dirs, files in os.walk(new_project_dir):
+                dirs[:] = [d for d in dirs if d not in skip_dirs]
+                for filename in files:
+                    src = Path(root) / filename
+                    dst = project_path / src.relative_to(new_project_dir)
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
+
+            # Also copy any new top-level template dirs that didn't exist before
+            for item in new_project_dir.iterdir():
+                if item.is_dir() and item.name not in skip_dirs and item.name not in preserve_dirs:
+                    dst = project_path / item.name
+                    if not dst.exists():
+                        shutil.copytree(item, dst)
+
+            # Update project registry
+            projects_file = self.projects_dir / 'projects.json'
+            if projects_file.exists():
+                try:
+                    projects = json.load(open(projects_file))
+                    for p in projects:
+                        if p['name'] == project_name:
+                            p['type'] = new_template
+                            p['modified'] = datetime.now().isoformat()
+                    with open(projects_file, 'w') as f:
+                        json.dump(projects, f, indent=2)
+                except Exception:
+                    pass
+
+            # Commit migration if git-enabled
+            if self._is_git_project(project_path):
+                self._git_run(project_path, 'add', '-A', check=False)
+                self._git_run(
+                    project_path, 'commit', '-m',
+                    f"apd: migrated from '{current_template}' to '{new_template}'",
+                    check=False,
+                )
+
+            print(f"\n  Migration complete!")
+            print(f"  Project '{project_name}' is now a '{new_template}' project.")
+
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
     def score_template_quality(self, template_name: str):
         """Score a template for contest-visible quality."""
         template_dir = self.templates_dir / template_name
@@ -7900,7 +8663,7 @@ trim_trailing_whitespace = false
                 print("Error: Usage: apd snapshot <project-name-or-path> [label]")
                 return
             label = args[2] if len(args) > 2 and not args[2].startswith('-') else None
-            self.snapshot_project(args[1], label=label)
+            self.git_snapshot_project(args[1], label=label)
             return
 
         if command == 'restore':
@@ -7909,6 +8672,50 @@ trim_trailing_whitespace = false
                 return
             destination = args[2] if len(args) > 2 and not args[2].startswith('-') else None
             self.restore_snapshot(args[1], destination=destination, force='--force' in args)
+            return
+
+        if command == 'history':
+            if len(args) < 2:
+                print("Error: Usage: apd history <project-name-or-path> [--limit <n>]")
+                return
+            limit = 20
+            if '--limit' in args:
+                idx = args.index('--limit')
+                if idx + 1 < len(args):
+                    try:
+                        limit = int(args[idx + 1])
+                    except ValueError:
+                        pass
+            self.git_history(args[1], limit=limit)
+            return
+
+        if command == 'revert':
+            if len(args) < 3:
+                print("Error: Usage: apd revert <project-name-or-path> <snapshot-ref> [--force]")
+                print("  Run 'apd history <project>' to see available snapshots.")
+                return
+            self.git_revert(args[1], args[2], force='--force' in args)
+            return
+
+        if command == 'scan':
+            if len(args) < 2:
+                print("Error: Usage: apd scan <project-name-or-path> [--json]")
+                return
+            self.scan_project(args[1], json_output='--json' in args)
+            return
+
+        if command in ('graph-viz', 'graphviz'):
+            if len(args) < 2:
+                print("Error: Usage: apd graph-viz <project-name-or-path>")
+                return
+            self.interactive_graph(args[1])
+            return
+
+        if command == 'migrate':
+            if len(args) < 3:
+                print("Error: Usage: apd migrate <project-name-or-path> <new-template> [--force]")
+                return
+            self.migrate_project(args[1], args[2], force='--force' in args)
             return
 
         if command == 'archive':
