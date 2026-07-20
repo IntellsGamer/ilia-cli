@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.2.5
+Version: 3.2.6
 """
-__version__ = "3.2.5"
+__version__ = "3.2.6"
 import threading
 import urllib.request
 import urllib.error
@@ -7546,20 +7546,69 @@ jobs:
         print(f"  URL: http://localhost:{start_port}")
         print(f"  Press Ctrl+C to stop.\n")
 
+        # Install dependencies first if needed
+        req_file = tmp_play / 'requirements.txt'
+        if req_file.exists():
+            python_frameworks = [f for f in stack.get('frameworks', []) if f in ('Flask', 'Django', 'FastAPI')]
+            if python_frameworks or (not stack.get('dependency_files') or 'package.json' not in stack.get('dependency_files', [])):
+                print("  Installing Python dependencies...")
+                try:
+                    install = subprocess.run(
+                        [sys.executable, '-m', 'pip', 'install', '-r', str(req_file), '-q'],
+                        capture_output=True, text=True, timeout=120,
+                    )
+                    if install.returncode != 0:
+                        print(f"  Warning: pip install failed: {install.stderr.strip()[:200]}")
+                    else:
+                        print("  Dependencies installed.")
+                except Exception as e:
+                    print(f"  Warning: Could not install deps: {e}")
+
+        # Inject port into the run command for Python web frameworks
+        env = os.environ.copy()
+        env['FLASK_RUN_PORT'] = str(start_port)
+        env['PORT'] = str(start_port)
+
+        # Rewrite command to include port
+        if 'Flask' in stack.get('frameworks', []):
+            # Detect the app module name (app.py, wsgi.py, etc.)
+            app_module = 'app'
+            for candidate in ['app', 'wsgi', 'main', 'server']:
+                if (tmp_play / f'{candidate}.py').exists():
+                    app_module = candidate
+                    break
+            env['FLASK_APP'] = app_module
+            run_cmd = f"{sys.executable} -m flask run --port {start_port} --host 0.0.0.0"
+        elif 'Django' in stack.get('frameworks', []):
+            run_cmd = f"{sys.executable} manage.py runserver {start_port}"
+        elif 'FastAPI' in stack.get('frameworks', []):
+            # Find the app object (usually app or main)
+            app_module = 'main'
+            for candidate in ['main', 'app', 'server']:
+                if (tmp_play / f'{candidate}.py').exists():
+                    app_module = candidate
+                    break
+            run_cmd = f"{sys.executable} -m uvicorn {app_module}:app --host 0.0.0.0 --port {start_port}"
+
         proc = None
         try:
             import webbrowser
-            # Delayed browser open
+
             def open_browser():
-                time.sleep(3)
+                time.sleep(4)
                 webbrowser.open(f"http://localhost:{start_port}")
+
             threading.Thread(target=open_browser, daemon=True).start()
 
             proc = subprocess.Popen(
                 run_cmd, shell=True, cwd=str(tmp_play),
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                env=env,
             )
-            proc.wait()
+            exit_code = proc.wait()
+            if exit_code != 0:
+                print(f"\n  Server exited with code {exit_code}.")
+                print(f"  Common causes: missing dependencies, syntax errors, port in use.")
+                print(f"  Try running manually: cd {tmp_play} && {run_cmd}")
         except KeyboardInterrupt:
             print("\n  Playground stopped.")
         finally:
