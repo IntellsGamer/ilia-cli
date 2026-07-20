@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.2.4
+Version: 3.2.5
 """
-__version__ = "3.2.4"
+__version__ = "3.2.5"
 import threading
 import urllib.request
 import urllib.error
@@ -1252,6 +1252,11 @@ class ILIACLI:
                 'graphviz': 'graph-viz',
                 'gv': 'graph-viz',
                 'migrate': 'migrate',
+                'review': 'review',
+                'cr': 'review',
+                'playground': 'playground',
+                'play': 'playground',
+                'outdated': 'outdated',
                 'blueprint': 'blueprint',
                 
                 # Dev tools
@@ -4313,6 +4318,9 @@ python "{script_path}" update --verify
                 ("scan <name|path> [--json]", "Security scan: secrets, deps CVEs, config issues"),
                 ("graph-viz <name|path>", "Interactive dependency graph (tkinter window)"),
                 ("migrate <name|path> <template> [--force]", "Migrate project to a different template"),
+                ("review <name|path> [--range R] [--out f.md]", "Review git changes with risk analysis"),
+                ("playground <template> [--port N]", "Live browser preview of a template"),
+                ("outdated <name|path> [--json]", "Check dependencies for available updates"),
                 ("blueprint <name|path>", "Export reproducible project blueprint"),
                 ("env <name|path>", "Generate .env.example from code references"),
                 ("dockerize <name|path>", "Generate Dockerfile and .dockerignore"),
@@ -7274,6 +7282,423 @@ jobs:
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    # ── Commit Review ───────────────────────────────────────────────────
+
+    def _risk_detect_changes(self, project_path: Path, diff_text: str) -> List[Dict[str, str]]:
+        """Analyse a unified diff for risky changes."""
+        risks = []
+        risk_patterns = [
+            ('auth', r'(?i)(password|passwd|auth|login|session|jwt|token|cookie)'),
+            ('database', r'(?i)(DROP\s+TABLE|ALTER\s+TABLE|DELETE\s+FROM|migration|schema)'),
+            ('secrets', r'(?i)(api[_-]?key|secret|private[_-]?key|credentials)'),
+            ('dependencies', r'(?i)(requirements\.txt|package\.json|go\.mod|Cargo\.toml|pyproject\.toml)'),
+            ('docker', r'(?i)(Dockerfile|docker-compose|EXPOSE\s+\d+)'),
+            ('ci', r'(?i)(\.github/workflows|\.gitlab-ci|Jenkinsfile|\.circleci)'),
+            ('config', r'(?i)(\.env|settings\.|config\.|\.ini|\.yaml|\.toml)'),
+        ]
+        for line in diff_text.splitlines():
+            if not line.startswith('+') or line.startswith('+++'):
+                continue
+            content = line[1:]
+            for category, pattern in risk_patterns:
+                if re.search(pattern, content):
+                    risks.append({'category': category, 'line': content.strip()[:120]})
+                    break
+        return risks[:50]
+
+    def review_project(self, target: str, commit_range: Optional[str] = None, output: Optional[str] = None):
+        """Review git changes between commits with risk analysis."""
+        project_path, project_name, _ = self._resolve_project_target(target)
+        if not project_path or not project_path.exists():
+            print(f"Project not found: {target}")
+            return
+
+        if not self._is_git_project(project_path):
+            print(f"Project '{project_name}' is not a git repository.")
+            return
+
+        # Default range: last 3 commits
+        if not commit_range:
+            result = self._git_run(project_path, 'rev-list', '--count', 'HEAD', check=False)
+            count = int(result.stdout.strip()) if result.stdout.strip().isdigit() else 1
+            commit_range = f'HEAD~{min(count, 3)}..HEAD'
+
+        # Get log summary
+        log = self._git_run(
+            project_path, 'log', commit_range,
+            '--pretty=format:%h|%ai|%an|%s', check=False,
+        )
+        if not log.stdout.strip():
+            print(f"No commits found in range '{commit_range}'.")
+            return
+
+        commits = []
+        for line in log.stdout.strip().splitlines():
+            parts = line.split('|', 3)
+            if len(parts) == 4:
+                commits.append({
+                    'hash': parts[0],
+                    'date': parts[1][:19],
+                    'author': parts[2],
+                    'message': parts[3],
+                })
+
+        # Get diff stats
+        stat = self._git_run(
+            project_path, 'diff', '--stat', commit_range, check=False,
+        )
+        stat_lines = [l for l in stat.stdout.strip().splitlines() if l and '|' in l]
+
+        # Get full diff for risk analysis
+        diff = self._git_run(project_path, 'diff', commit_range, check=False)
+        risks = self._risk_detect_changes(project_path, diff.stdout)
+
+        # File-level breakdown
+        files_changed = set()
+        added, deleted = 0, 0
+        for dl in diff.stdout.splitlines():
+            if dl.startswith('diff --git'):
+                parts = dl.split(' b/', 1)
+                if len(parts) == 2:
+                    files_changed.add(parts[1])
+            elif dl.startswith('+') and not dl.startswith('+++'):
+                added += 1
+            elif dl.startswith('-') and not dl.startswith('---'):
+                deleted += 1
+
+        # Group risks by category
+        risk_groups: Dict[str, list] = {}
+        for r in risks:
+            risk_groups.setdefault(r['category'], []).append(r)
+
+        # Output
+        print(f"\n  Commit Review: {project_name}")
+        print(f"  {'─' * 60}")
+        print(f"  Range    : {commit_range}")
+        print(f"  Commits  : {len(commits)}")
+        print(f"  Files    : {len(files_changed)}")
+        print(f"  Added    : +{added} lines")
+        print(f"  Deleted  : -{deleted} lines")
+        print(f"  Risks    : {len(risks)}")
+
+        self._print_section("Commits")
+        for c in commits:
+            print(f"  {c['hash']}  {c['date']}  {c['author']:<16s}  {c['message']}")
+
+        if stat_lines:
+            self._print_section("Files Changed")
+            for sl in stat_lines[:30]:
+                print(f"  {sl}")
+
+        if risk_groups:
+            self._print_section("Risk Analysis")
+            risk_labels = {
+                'auth': 'Authentication / Login',
+                'database': 'Database / Schema',
+                'secrets': 'Secrets / Credentials',
+                'dependencies': 'Dependencies',
+                'docker': 'Docker / Deployment',
+                'ci': 'CI / CD Pipeline',
+                'config': 'Configuration',
+            }
+            for cat, items in risk_groups.items():
+                label = risk_labels.get(cat, cat.title())
+                print(f"\n  [{label}] ({len(items)} occurrence(s))")
+                for item in items[:5]:
+                    print(f"    - {item['line']}")
+        else:
+            print(f"\n  No risky patterns detected. Changes look safe.")
+
+        # Markdown report
+        if output:
+            md_lines = [
+                f"# Commit Review: {project_name}",
+                f"",
+                f"| Metric | Value |",
+                f"|--------|-------|",
+                f"| Range | `{commit_range}` |",
+                f"| Commits | {len(commits)} |",
+                f"| Files | {len(files_changed)} |",
+                f"| Added | +{added} |",
+                f"| Deleted | -{deleted} |",
+                f"| Risks | {len(risks)} |",
+                f"",
+                f"## Commits",
+                f"",
+                f"| Hash | Date | Author | Message |",
+                f"|------|------|--------|---------|",
+            ]
+            for c in commits:
+                md_lines.append(f"| {c['hash']} | {c['date']} | {c['author']} | {c['message']} |")
+            md_lines += ["", "## Files Changed", "```"]
+            for sl in stat_lines:
+                md_lines.append(sl)
+            md_lines.append("```")
+            if risk_groups:
+                md_lines += ["", "## Risk Analysis"]
+                for cat, items in risk_groups.items():
+                    label = risk_labels.get(cat, cat.title())
+                    md_lines.append(f"### {label}")
+                    for item in items:
+                        md_lines.append(f"- `{item['line']}`")
+
+            output_path = Path(output).expanduser()
+            if not output_path.is_absolute():
+                output_path = project_path / output_path
+            output_path.write_text('\n'.join(md_lines) + '\n', encoding='utf-8')
+            print(f"\n  Report written: {output_path}")
+
+    # ── Template Playground ─────────────────────────────────────────────
+
+    def playground(self, template_name: str, port: Optional[int] = None):
+        """Launch a live preview of a template in the browser.
+
+        Copies the template to a temp directory, detects the run command,
+        starts the server on a random (or specified) port, opens the
+        browser, and auto-cleans after the process exits.
+        """
+        template_dir = self.templates_dir / template_name
+        if not template_dir.exists():
+            # Try online templates
+            self.download_template(template_name, quiet=True)
+            if not template_dir.exists():
+                print(f"Template '{template_name}' not found.")
+                return
+
+        import http.server
+        import socketserver
+
+        tmp_play = Path(tempfile.mkdtemp(prefix=f'apd-play-{template_name}-'))
+        print(f"\n  Playground: {template_name}")
+        print(f"  {'─' * 50}")
+
+        # Copy template to temp dir
+        skip_dirs = self._project_skip_dirs()
+        for root, dirs, files in os.walk(template_dir):
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            for filename in files:
+                src = Path(root) / filename
+                dst = tmp_play / src.relative_to(template_dir)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+
+        # Detect what kind of project it is and choose a strategy
+        stack = self._detect_project_stack(tmp_play)
+        run_cmd = None
+        is_web = False
+        start_port = port or 8765
+
+        if 'Flask' in stack['frameworks'] or 'Django' in stack['frameworks'] or 'FastAPI' in stack['frameworks']:
+            # Python web framework — try to run it
+            for cmd in stack['run_commands']:
+                if 'runserver' in cmd or 'app.py' in cmd or 'uvicorn' in cmd:
+                    run_cmd = cmd
+                    is_web = True
+                    break
+            if not run_cmd and (tmp_play / 'app.py').exists():
+                run_cmd = f"{sys.executable} app.py"
+                is_web = True
+        elif 'React' in stack['frameworks'] or 'Next.js' in stack['frameworks'] or 'Vue' in stack['frameworks'] or 'Angular' in stack['frameworks']:
+            # JS framework — npm start
+            if (tmp_play / 'package.json').exists():
+                run_cmd = 'npm start'
+                is_web = True
+                start_port = port or 3000
+
+        if not is_web:
+            # Static HTML/CSS/JS — serve with simple HTTP server
+            index = tmp_play / 'index.html'
+            if not index.exists():
+                # Try to find any HTML file
+                html_files = list(tmp_play.rglob('*.html'))
+                if html_files:
+                    tmp_play_cwd = html_files[0].parent
+                else:
+                    print("  No HTML files or runnable web app found in this template.")
+                    print(f"  Files: {[f.name for f in tmp_play.iterdir()]}")
+                    shutil.rmtree(tmp_play, ignore_errors=True)
+                    return
+            else:
+                tmp_play_cwd = tmp_play
+
+            print(f"  Serving static files on http://localhost:{start_port}")
+            print(f"  Directory: {tmp_play_cwd}")
+            print(f"  Press Ctrl+C to stop.\n")
+
+            handler = http.server.SimpleHTTPRequestHandler
+            os.chdir(tmp_play_cwd)
+            try:
+                with socketserver.TCPServer(("", start_port), handler) as httpd:
+                    import webbrowser
+                    webbrowser.open(f"http://localhost:{start_port}")
+                    httpd.serve_forever()
+            except KeyboardInterrupt:
+                print("\n  Playground stopped.")
+            except OSError as e:
+                print(f"  Port {start_port} busy. Try: apd playground {template_name} --port <other>")
+            finally:
+                os.chdir(Path.cwd())
+                shutil.rmtree(tmp_play, ignore_errors=True)
+            return
+
+        # Runnable web app — start in subprocess
+        print(f"  Starting: {run_cmd}")
+        print(f"  URL: http://localhost:{start_port}")
+        print(f"  Press Ctrl+C to stop.\n")
+
+        proc = None
+        try:
+            import webbrowser
+            # Delayed browser open
+            def open_browser():
+                time.sleep(3)
+                webbrowser.open(f"http://localhost:{start_port}")
+            threading.Thread(target=open_browser, daemon=True).start()
+
+            proc = subprocess.Popen(
+                run_cmd, shell=True, cwd=str(tmp_play),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            )
+            proc.wait()
+        except KeyboardInterrupt:
+            print("\n  Playground stopped.")
+        finally:
+            if proc and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            shutil.rmtree(tmp_play, ignore_errors=True)
+
+    # ── Dependency Freshness ────────────────────────────────────────────
+
+    def _check_pip_outdated(self, requirements_file: Path) -> List[Dict[str, Any]]:
+        """Check Python packages for available updates via ``pip index``."""
+        results = []
+        if not shutil.which('pip'):
+            return results
+        for req in self._parse_requirements(requirements_file):
+            name = req['name']
+            current = ''
+            if '==' in req['raw']:
+                current = req['raw'].split('==', 1)[1].split(';', 1)[0].strip()
+            try:
+                # Try `pip index versions <name>` which shows available versions
+                r = subprocess.run(
+                    [sys.executable, '-m', 'pip', 'index', 'versions', name],
+                    capture_output=True, text=True, timeout=30,
+                )
+                output = r.stdout.strip()
+                # Parse "name (X.Y.Z)" or "name (X.Y.Z)" from output
+                latest_match = re.search(r'\(([0-9][^\)]+)\)', output)
+                latest = latest_match.group(1) if latest_match else ''
+                if latest and current and latest != current:
+                    is_major = latest.split('.')[0] != current.split('.')[0]
+                    results.append({
+                        'name': name,
+                        'current': current,
+                        'latest': latest,
+                        'major_bump': is_major,
+                        'source': 'requirements.txt',
+                    })
+                elif latest and not current:
+                    results.append({
+                        'name': name,
+                        'current': '(unpinned)',
+                        'latest': latest,
+                        'major_bump': False,
+                        'source': 'requirements.txt',
+                    })
+            except (subprocess.TimeoutExpired, Exception):
+                pass
+        return results
+
+    def _check_npm_outdated(self, project_path: Path) -> List[Dict[str, Any]]:
+        """Check Node.js packages for available updates via ``npm outdated``."""
+        results = []
+        if not shutil.which('npm'):
+            return results
+        try:
+            r = subprocess.run(
+                ['npm', 'outdated', '--json'],
+                cwd=str(project_path),
+                capture_output=True, text=True, timeout=60,
+            )
+            data = json.loads(r.stdout) if r.stdout.strip() else {}
+            for pkg_name, info in data.items():
+                current = info.get('current', '')
+                latest = info.get('latest', '')
+                wanted = info.get('wanted', '')
+                if latest and current and latest != current:
+                    is_major = latest.split('.')[0] != current.split('.')[0]
+                    results.append({
+                        'name': pkg_name,
+                        'current': current,
+                        'latest': latest,
+                        'wanted': wanted,
+                        'major_bump': is_major,
+                        'source': 'package.json',
+                    })
+        except (json.JSONDecodeError, subprocess.TimeoutExpired, Exception):
+            pass
+        return results
+
+    def outdated_project(self, target: str, json_output: bool = False):
+        """Check all dependencies for available updates."""
+        project_path, project_name, _ = self._resolve_project_target(target)
+        if not project_path or not project_path.exists():
+            print(f"Project not found: {target}")
+            return
+
+        print(f"\n  Checking dependencies for '{project_name}'...")
+
+        outdated: List[Dict[str, Any]] = []
+
+        req_file = project_path / 'requirements.txt'
+        if req_file.exists():
+            print("  Checking Python packages...")
+            outdated.extend(self._check_pip_outdated(req_file))
+
+        if (project_path / 'package.json').exists():
+            print("  Checking Node.js packages...")
+            outdated.extend(self._check_npm_outdated(project_path))
+
+        if not outdated:
+            print(f"\n  All dependencies are up to date (or checkers unavailable).")
+            return
+
+        # Categorise
+        major = [d for d in outdated if d.get('major_bump')]
+        minor = [d for d in outdated if not d.get('major_bump')]
+
+        if json_output:
+            print(json.dumps({'project': project_name, 'outdated': outdated, 'major': len(major), 'minor': len(minor)}, indent=2))
+            return
+
+        self._print_title(f"Dependency Freshness: {project_name}", f"{len(outdated)} outdated")
+
+        if major:
+            self._print_section(f"Major Updates ({len(major)}) — Review carefully")
+            rows = [[d['name'], d['current'], d['latest'], d['source']] for d in major]
+            self._render_table(["Package", "Current", "Latest", "Source"], rows)
+
+        if minor:
+            self._print_section(f"Minor/Patch Updates ({len(minor)}) — Generally safe")
+            rows = [[d['name'], d['current'], d['latest'], d['source']] for d in minor]
+            self._render_table(["Package", "Current", "Latest", "Source"], rows)
+
+        self._print_section("Summary")
+        self._render_pairs([
+            ("Total outdated", str(len(outdated))),
+            ("Major (breaking)", str(len(major))),
+            ("Minor/patch", str(len(minor))),
+        ])
+        if major:
+            print(f"\n  ⚠ Major updates may include breaking changes. Update with caution.")
+        print(f"  Update Python:  pip install --upgrade {' '.join(d['name'] for d in major if d['source'] == 'requirements.txt')}")
+        print(f"  Update Node:    npm update")
+
     def score_template_quality(self, template_name: str):
         """Score a template for contest-visible quality."""
         template_dir = self.templates_dir / template_name
@@ -8716,6 +9141,41 @@ trim_trailing_whitespace = false
                 print("Error: Usage: apd migrate <project-name-or-path> <new-template> [--force]")
                 return
             self.migrate_project(args[1], args[2], force='--force' in args)
+            return
+
+        if command == 'review':
+            if len(args) < 2:
+                print("Error: Usage: apd review <project-name-or-path> [--range <rev-range>] [--out report.md]")
+                return
+            commit_range = None
+            output = None
+            for i, a in enumerate(args):
+                if a == '--range' and i + 1 < len(args):
+                    commit_range = args[i + 1]
+                if a == '--out' and i + 1 < len(args):
+                    output = args[i + 1]
+            self.review_project(args[1], commit_range=commit_range, output=output)
+            return
+
+        if command == 'playground':
+            if len(args) < 2:
+                print("Error: Usage: apd playground <template-name> [--port <port>]")
+                return
+            playground_port = None
+            for i, a in enumerate(args):
+                if a == '--port' and i + 1 < len(args):
+                    try:
+                        playground_port = int(args[i + 1])
+                    except ValueError:
+                        pass
+            self.playground(args[1], port=playground_port)
+            return
+
+        if command == 'outdated':
+            if len(args) < 2:
+                print("Error: Usage: apd outdated <project-name-or-path> [--json]")
+                return
+            self.outdated_project(args[1], json_output='--json' in args)
             return
 
         if command == 'archive':
