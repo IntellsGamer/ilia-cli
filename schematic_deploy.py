@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.2.7
+Version: 3.2.8
 """
-__version__ = "3.2.7"
+__version__ = "3.2.8"
 import threading
 import urllib.request
 import urllib.error
@@ -1502,7 +1502,7 @@ class ILIACLI:
         auto_git = self._ask_yes_no("Initialize git repository for new projects", default=False)
         self.config['PROJECT']['auto_git'] = 'true' if auto_git else 'false'
 
-        auto_venv = self._ask_yes_no("Create virtual environment for Python projects", default=True)
+        auto_venv = self._ask_yes_no("Create virtual environment for projects", default=True)
         self.config['PROJECT']['auto_venv'] = 'true' if auto_venv else 'false'
 
         self._render_step(5, total_steps, "Finalize setup")
