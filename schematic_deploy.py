@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.2.8
+Version: 3.2.9
 """
-__version__ = "3.2.8"
+__version__ = "3.2.9"
 import threading
 import urllib.request
 import urllib.error
@@ -4282,6 +4282,7 @@ python "{script_path}" update --verify
                 ("init [name] [--flask|--html]", "Interactive project creation"),
                 ("doctor", "Run system diagnostics"),
                 ("update [--force|-f]", "Check for updates (--force to install)"),
+                ("gui", "Launch GUI for project & template management"),
             ]),
             ("Aliases", [
                 ("alias list", "List all configured aliases"),
