@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 APD - Advanced Project Deployer
-Version: 3.2.6
+Version: 3.2.7
 """
-__version__ = "3.2.6"
+__version__ = "3.2.7"
 import threading
 import urllib.request
 import urllib.error
@@ -1089,6 +1089,12 @@ class ILIACLI:
             print("  apd template info <name>                  - Show template details")
             print("  apd template validate <name>              - Validate template")
             print("  apd template edit <name>                  - Edit template manifest")
+            print("  apd template version <name> --tag v1.0    - Tag a version snapshot")
+            print("  apd template version <name> --list        - List tagged versions")
+            print("  apd template version <name> --rollback v1 - Rollback to a version")
+            print("  apd template version <name> --diff v1 v2  - Diff two versions")
+            print("  apd template fork <source> <name>         - Fork with upstream tracking")
+            print("  apd template merge <fork-name>            - Pull upstream changes into fork")
             print("  apd help templates                        - Show this help")
             
             print("\n💡 Example workflow:")
@@ -1283,6 +1289,7 @@ class ILIACLI:
                 'clean-project': 'clean-project',
                 'scaffold-tests': 'scaffold-tests',
                 'compare': 'compare',
+                'diff': 'diff',
                 'rename': 'rename',
                 'mv': 'rename',
                 'archive': 'archive',
@@ -1688,6 +1695,8 @@ class ILIACLI:
                 ("templates import <source>", "Import from URL or local archive"),
                 ("templates remove <name>", "Remove template"),
                 ("templates export <name>", "Export template archive"),
+                ("templates version <name>", "Version tagging and diff"),
+                ("templates fork <source> <name>", "Fork with upstream tracking"),
                 ("help templates", "Show template creation guide"),
             ]),
             ("Config", [
@@ -4306,6 +4315,7 @@ python "{script_path}" update --verify
                 ("graph <name|path>", "Generate dependency graph DOT file"),
                 ("metrics <name|path>", "Show file, line, and size metrics"),
                 ("compare <left> <right>", "Compare two projects"),
+                ("diff <left> <right>", "Structural file-by-file diff between projects"),
                 ("scaffold-tests <name|path>", "Create smoke test scaffold"),
                 ("audit-all", "Audit all registered projects"),
                 ("open <name>", "Open project in default editor"),
@@ -4339,6 +4349,9 @@ python "{script_path}" update --verify
                 ("templates validate <name>", "Validate template structure"),
                 ("templates score <name>", "Score template quality"),
                 ("templates clone <src> <dst>", "Clone an installed template"),
+                ("templates version <name> [--tag|--list|--rollback|--diff]", "Version tagging, listing, rollback, diff"),
+                ("templates fork <source> <name>", "Fork a template with upstream tracking"),
+                ("templates merge <fork-name>", "Pull upstream changes into a fork"),
                 ("templates import <source>", "Import from URL or local archive"),
                 ("templates export <name>", "Export template archive"),
             ]),
@@ -5471,6 +5484,458 @@ python "{script_path}" update --verify
             self.send_telemetry("template_exported", template_name=template_name, export_size=size)
         except Exception as e:
             print(f"❌ Export failed: {e}")
+
+    # ── Template Versioning ──────────────────────────────────────────────
+
+    def _template_versions_dir(self, template_name: str) -> Path:
+        """Return the versions directory for a template."""
+        return self.templates_dir / '_versions' / template_name
+
+    def _load_version_manifest(self, template_name: str) -> List[Dict[str, Any]]:
+        """Load the version manifest (list of tagged snapshots)."""
+        vdir = self._template_versions_dir(template_name)
+        manifest_file = vdir / 'versions.json'
+        if manifest_file.exists():
+            try:
+                with open(manifest_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    return data
+            except Exception:
+                pass
+        return []
+
+    def _save_version_manifest(self, template_name: str, versions: List[Dict[str, Any]]):
+        vdir = self._template_versions_dir(template_name)
+        vdir.mkdir(parents=True, exist_ok=True)
+        with open(vdir / 'versions.json', 'w', encoding='utf-8') as f:
+            json.dump(versions, f, indent=2)
+
+    def version_template(self, template_name: str, args: List[str]):
+        """Handle `apd template version <name> [options]`."""
+        template_path = self.templates_dir / template_name
+        if not template_path.exists():
+            print(f"Template '{template_name}' not found")
+            return
+
+        tag = None
+        do_list = False
+        rollback_ref = None
+        diff_refs = None
+        i = 0
+        while i < len(args):
+            if args[i] == '--tag' and i + 1 < len(args):
+                tag = args[i + 1]
+                i += 2
+            elif args[i] == '--list':
+                do_list = True
+                i += 1
+            elif args[i] == '--rollback' and i + 1 < len(args):
+                rollback_ref = args[i + 1]
+                i += 2
+            elif args[i] == '--diff' and i + 2 <= len(args):
+                remaining = [a for a in args[i + 1:] if not a.startswith('--')]
+                if len(remaining) >= 2:
+                    diff_refs = (remaining[0], remaining[1])
+                elif len(remaining) == 1:
+                    diff_refs = (remaining[0], None)
+                i += 1
+                break
+            else:
+                i += 1
+
+        versions = self._load_version_manifest(template_name)
+        vdir = self._template_versions_dir(template_name)
+
+        if do_list or (not tag and not rollback_ref and not diff_refs):
+            self._print_title(f"Versions: {template_name}")
+            if not versions:
+                print("No versions tagged yet.")
+                print(f"  Tag a version: apd template version {template_name} --tag v1.0.0")
+                return
+            rows = []
+            for v in versions:
+                rows.append([
+                    v.get('tag', 'untagged'),
+                    v.get('created', '?')[:16],
+                    str(v.get('file_count', '?')),
+                    v.get('note', ''),
+                ])
+            self._render_table(['Tag', 'Date', 'Files', 'Note'], rows)
+            return
+
+        if tag:
+            tag = self._sanitize_template_name(tag)
+            if not tag:
+                print("Invalid tag name")
+                return
+            if any(v.get('tag') == tag for v in versions):
+                print(f"Tag '{tag}' already exists. Use --rollback or pick a different tag.")
+                return
+
+            snap_dir = vdir / tag
+            if snap_dir.exists():
+                shutil.rmtree(snap_dir)
+            shutil.copytree(template_path, snap_dir)
+
+            file_count = len([f for f in snap_dir.rglob('*') if f.is_file()])
+            entry = {
+                'tag': tag,
+                'created': datetime.now().isoformat(),
+                'file_count': file_count,
+                'snapshot_dir': str(snap_dir),
+                'note': '',
+            }
+            versions.append(entry)
+            self._save_version_manifest(template_name, versions)
+            print(f"Tagged '{template_name}' as {tag}  ({file_count} files)")
+            self.log_activity('info', f'Template version tagged: {template_name}@{tag}')
+            return
+
+        if rollback_ref:
+            snap_dir = vdir / rollback_ref
+            if not snap_dir.exists():
+                matched = [v for v in versions if v.get('tag', '').startswith(rollback_ref)]
+                if matched:
+                    rollback_ref = matched[-1]['tag']
+                    snap_dir = vdir / rollback_ref
+                else:
+                    print(f"Version '{rollback_ref}' not found")
+                    return
+
+            shutil.rmtree(template_path)
+            shutil.copytree(snap_dir, template_path)
+            print(f"Rolled back '{template_name}' to {rollback_ref}")
+            self.log_activity('info', f'Template rolled back: {template_name} -> {rollback_ref}')
+            return
+
+        if diff_refs:
+            ref_a = diff_refs[0]
+            ref_b = diff_refs[1]
+            dir_a = vdir / ref_a if ref_b else template_path
+            dir_b = vdir / ref_b if ref_b else vdir / ref_a
+            label_a = ref_b and ref_a or '(current)'
+            label_b = ref_b or ref_a
+
+            if ref_b:
+                for d, label in [(dir_a, ref_a), (dir_b, ref_b)]:
+                    if not d.exists():
+                        matched = [v for v in versions if v.get('tag', '').startswith(label)]
+                        if matched:
+                            tag_name = matched[-1]['tag']
+                            if d == dir_a:
+                                dir_a = vdir / tag_name
+                                label_a = tag_name
+                            else:
+                                dir_b = vdir / tag_name
+                                label_b = tag_name
+                        else:
+                            print(f"Version '{label}' not found")
+                            return
+
+            if not dir_a.exists() or not dir_b.exists():
+                print("One or both diff targets not found")
+                return
+
+            self._diff_template_dirs(dir_a, dir_b, label_a, label_b)
+            return
+
+    def _diff_template_dirs(self, dir_a: Path, dir_b: Path, label_a: str, label_b: str):
+        """Print a structural diff between two template directories."""
+        files_a = {}
+        files_b = {}
+        for p in dir_a.rglob('*'):
+            if p.is_file():
+                files_a[str(p.relative_to(dir_a))] = p
+        for p in dir_b.rglob('*'):
+            if p.is_file():
+                files_b[str(p.relative_to(dir_b))] = p
+
+        only_a = sorted(set(files_a) - set(files_b))
+        only_b = sorted(set(files_b) - set(files_a))
+        shared = sorted(set(files_a) & set(files_b))
+
+        modified = []
+        for rel in shared:
+            ha = hashlib.md5(files_a[rel].read_bytes()).hexdigest()
+            hb = hashlib.md5(files_b[rel].read_bytes()).hexdigest()
+            if ha != hb:
+                modified.append(rel)
+
+        self._print_title(f"Diff: {label_a} vs {label_b}")
+        self._render_pairs([
+            ("Files only in " + label_a, str(len(only_a))),
+            ("Files only in " + label_b, str(len(only_b))),
+            ("Modified", str(len(modified))),
+            ("Unchanged", str(len(shared) - len(modified))),
+        ])
+
+        if only_a:
+            self._print_section(f"Only in {label_a}")
+            for f in only_a:
+                print(f"  {self._style('- ' + f, color='31')}")
+        if only_b:
+            self._print_section(f"Only in {label_b}")
+            for f in only_b:
+                print(f"  {self._style('+ ' + f, color='32')}")
+        if modified:
+            self._print_section("Modified")
+            for f in modified:
+                print(f"  ~ {f}")
+
+    # ── Structural Diff ──────────────────────────────────────────────────
+
+    def diff_projects(self, left: str, right: str):
+        """File-by-file structural diff between two projects."""
+        left_path, left_name, _ = self._resolve_project_target(left)
+        right_path, right_name, _ = self._resolve_project_target(right)
+        if not left_path or not left_path.exists():
+            print(f"Project not found: {left}")
+            return
+        if not right_path or not right_path.exists():
+            print(f"Project not found: {right}")
+            return
+
+        left_files = {}
+        right_files = {}
+        for p in self._iter_project_files(left_path):
+            left_files[self._project_rel(left_path, p)] = p
+        for p in self._iter_project_files(right_path):
+            right_files[self._project_rel(right_path, p)] = p
+
+        only_left = sorted(set(left_files) - set(right_files))
+        only_right = sorted(set(right_files) - set(left_files))
+        shared = sorted(set(left_files) & set(right_files))
+
+        identical = []
+        modified = []
+        for rel in shared:
+            hl = hashlib.md5(left_files[rel].read_bytes()).hexdigest()
+            hr = hashlib.md5(right_files[rel].read_bytes()).hexdigest()
+            if hl == hr:
+                identical.append(rel)
+            else:
+                modified.append(rel)
+
+        left_stack = self._detect_project_stack(left_path)
+        right_stack = self._detect_project_stack(right_path)
+        left_deps = {f"{d['type']}:{d['name']}" for d in self._dependency_records(left_path)}
+        right_deps = {f"{d['type']}:{d['name']}" for d in self._dependency_records(right_path)}
+        dep_added = right_deps - left_deps
+        dep_removed = left_deps - right_deps
+
+        self._print_title(f"Diff: {left_name} vs {right_name}")
+        self._render_pairs([
+            ("Left frameworks", ', '.join(left_stack['frameworks']) or 'none'),
+            ("Right frameworks", ', '.join(right_stack['frameworks']) or 'none'),
+            ("Only in left", str(len(only_left))),
+            ("Only in right", str(len(only_right))),
+            ("Identical", str(len(identical))),
+            ("Modified", str(len(modified))),
+            ("Deps added in right", str(len(dep_added))),
+            ("Deps removed in right", str(len(dep_removed))),
+        ])
+
+        if only_left:
+            self._print_section(f"Only in {left_name}")
+            for f in only_left[:30]:
+                print(f"  {self._style('- ' + f, color='31')}")
+            if len(only_left) > 30:
+                print(f"  ... and {len(only_left) - 30} more")
+
+        if only_right:
+            self._print_section(f"Only in {right_name}")
+            for f in only_right[:30]:
+                print(f"  {self._style('+ ' + f, color='32')}")
+            if len(only_right) > 30:
+                print(f"  ... and {len(only_right) - 30} more")
+
+        if modified:
+            self._print_section("Modified")
+            for f in modified[:30]:
+                print(f"  ~ {f}")
+            if len(modified) > 30:
+                print(f"  ... and {len(modified) - 30} more")
+
+        if dep_added:
+            self._print_section("Dependencies added in right")
+            for d in sorted(dep_added):
+                print(f"  {self._style('+ ' + d, color='32')}")
+
+        if dep_removed:
+            self._print_section("Dependencies removed in right")
+            for d in sorted(dep_removed):
+                print(f"  {self._style('- ' + d, color='31')}")
+
+    # ── Template Fork ────────────────────────────────────────────────────
+
+    def fork_template(self, source_name: str, fork_name: str):
+        """Fork a template with upstream tracking metadata."""
+        source_dir = self.templates_dir / source_name
+        fork_name = self._sanitize_template_name(fork_name)
+        fork_dir = self.templates_dir / fork_name
+
+        if not source_dir.exists():
+            print(f"Template '{source_name}' not found")
+            return
+        if not fork_name:
+            print("Fork name required")
+            return
+        if fork_dir.exists():
+            print(f"Template '{fork_name}' already exists")
+            return
+
+        shutil.copytree(source_dir, fork_dir)
+
+        source_manifest = self.get_template_manifest(source_name)
+        source_version = '1.0.0'
+        if source_manifest:
+            source_version = source_manifest.data.get('version', '1.0.0')
+
+        fork_manifest = self.get_template_manifest(fork_name)
+        if fork_manifest:
+            fork_manifest.data['name'] = fork_name
+            fork_manifest.data['version'] = '1.0.0'
+            fork_manifest.data.setdefault('metadata', {})
+            fork_manifest.data['metadata']['forked_from'] = source_name
+            fork_manifest.data['metadata']['upstream_version'] = source_version
+            fork_manifest.data['metadata']['forked_at'] = datetime.now().isoformat()
+            fork_manifest.data['metadata']['modified'] = datetime.now().isoformat()
+            fork_manifest.save()
+
+        fork_meta = {
+            'source': source_name,
+            'forked_at': datetime.now().isoformat(),
+            'upstream_version': source_version,
+            'merge_history': [],
+        }
+        meta_file = fork_dir / '.apd-fork.json'
+        with open(meta_file, 'w', encoding='utf-8') as f:
+            json.dump(fork_meta, f, indent=2)
+
+        print(f"Forked '{source_name}' -> '{fork_name}'")
+        print(f"  Upstream: {source_name} v{source_version}")
+        print(f"  Edit freely: templates/{fork_name}/")
+        print(f"  Merge upstream: apd template merge {fork_name}")
+        self.log_activity('info', f'Template forked: {source_name} -> {fork_name}')
+
+    def merge_template(self, fork_name: str, force: bool = False):
+        """Merge upstream changes into a forked template."""
+        fork_dir = self.templates_dir / fork_name
+        if not fork_dir.exists():
+            print(f"Template '{fork_name}' not found")
+            return
+
+        meta_file = fork_dir / '.apd-fork.json'
+        if not meta_file.exists():
+            print(f"Template '{fork_name}' is not a fork")
+            print("Fork a template with: apd template fork <source> <fork-name>")
+            return
+
+        with open(meta_file, 'r', encoding='utf-8') as f:
+            fork_meta = json.load(f)
+
+        source_name = fork_meta.get('source', '')
+        source_dir = self.templates_dir / source_name
+        if not source_dir.exists():
+            print(f"Upstream template '{source_name}' not found locally")
+            print("Install it with: apd templates install " + source_name)
+            return
+
+        upstream_files = {}
+        fork_files = {}
+        for p in source_dir.rglob('*'):
+            if p.is_file():
+                upstream_files[str(p.relative_to(source_dir))] = p
+        for p in fork_dir.rglob('*'):
+            if p.is_file():
+                rel = str(p.relative_to(fork_dir))
+                if rel == '.apd-fork.json':
+                    continue
+                fork_files[rel] = p
+
+        only_upstream = sorted(set(upstream_files) - set(fork_files))
+        only_fork = sorted(set(fork_files) - set(upstream_files))
+        shared = sorted(set(upstream_files) & set(fork_files))
+
+        updated = []
+        for rel in shared:
+            hu = hashlib.md5(upstream_files[rel].read_bytes()).hexdigest()
+            hf = hashlib.md5(fork_files[rel].read_bytes()).hexdigest()
+            if hu != hf:
+                updated.append(rel)
+
+        self._print_title(f"Merge Preview: {source_name} -> {fork_name}")
+        self._render_pairs([
+            ("New files upstream", str(len(only_upstream))),
+            ("Only in fork", str(len(only_fork))),
+            ("Conflicts (differ)", str(len(updated))),
+        ])
+
+        if only_upstream:
+            self._print_section("New files to pull")
+            for f in only_upstream:
+                print(f"  {self._style('+ ' + f, color='32')}")
+
+        if updated:
+            self._print_section("Conflicts (files modified in both)")
+            for f in updated:
+                print(f"  {self._style('~ ' + f, color='33')}")
+
+        if only_fork:
+            self._print_section("Only in fork (kept)")
+            for f in only_fork[:15]:
+                print(f"  {f}")
+            if len(only_fork) > 15:
+                print(f"  ... and {len(only_fork) - 15} more")
+
+        if not only_upstream and not updated:
+            print("\nFork is already up to date with upstream.")
+            return
+
+        if not force:
+            print()
+            answer = input("Pull new files from upstream? [y/N] ").strip().lower()
+            if answer not in ('y', 'yes'):
+                print("Merge cancelled.")
+                return
+
+        pull_count = 0
+        for rel in only_upstream:
+            dest = fork_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(upstream_files[rel], dest)
+            pull_count += 1
+
+        for rel in updated:
+            dest = fork_dir / rel
+            shutil.copy2(upstream_files[rel], dest)
+            pull_count += 1
+
+        source_manifest = self.get_template_manifest(source_name)
+        new_version = '1.0.0'
+        if source_manifest:
+            new_version = source_manifest.data.get('version', '1.0.0')
+
+        fork_meta['merge_history'].append({
+            'from': source_name,
+            'at': datetime.now().isoformat(),
+            'pulled': pull_count,
+            'conflicts': len(updated),
+            'previous_upstream': fork_meta.get('upstream_version', '?'),
+        })
+        fork_meta['upstream_version'] = new_version
+        with open(meta_file, 'w', encoding='utf-8') as f:
+            json.dump(fork_meta, f, indent=2)
+
+        fork_manifest = self.get_template_manifest(fork_name)
+        if fork_manifest:
+            fork_manifest.data['metadata']['modified'] = datetime.now().isoformat()
+            fork_manifest.data['metadata']['upstream_version'] = new_version
+            fork_manifest.save()
+
+        print(f"\nMerged: pulled {pull_count} files from {source_name} v{new_version}")
+        self.log_activity('info', f'Fork merged: {fork_name} from {source_name}')
 
     def list_projects(self):
         """List all created projects."""
@@ -8892,6 +9357,21 @@ trim_trailing_whitespace = false
                     print("Error: Usage: apd templates score <name>")
                     return
                 self.score_template_quality(clean_args[1])
+            elif subcommand == 'version':
+                if len(clean_args) < 2:
+                    print("Error: Usage: apd templates version <name> [--tag|--list|--rollback|--diff]")
+                    return
+                self.version_template(clean_args[1], clean_args[2:])
+            elif subcommand == 'fork':
+                if len(clean_args) < 3:
+                    print("Error: Usage: apd templates fork <source> <fork-name>")
+                    return
+                self.fork_template(clean_args[1], clean_args[2])
+            elif subcommand == 'merge':
+                if len(clean_args) < 2:
+                    print("Error: Usage: apd templates merge <fork-name> [--force]")
+                    return
+                self.merge_template(clean_args[1], force='--force' in args)
             else:
                 self.manage_templates(subcommand, clean_args[1] if len(clean_args) > 1 else None, no_cache=no_cache, online=online)
             return
@@ -9091,6 +9571,13 @@ trim_trailing_whitespace = false
                 print("Error: Usage: apd compare <left-project> <right-project>")
                 return
             self.compare_projects(args[1], args[2])
+            return
+
+        if command == 'diff':
+            if len(args) < 3:
+                print("Error: Usage: apd diff <project-a> <project-b>")
+                return
+            self.diff_projects(args[1], args[2])
             return
 
         if command == 'scaffold-tests':
